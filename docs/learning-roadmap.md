@@ -86,7 +86,7 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashi
 sudo apt update && sudo apt install -y terraform
 ```
 
-補足：どちらも「署名鍵を置く → 配布元（apt リポジトリ）を登録する → apt で入れる」という同じ流れ。Ubuntu 標準の apt には入っていないか古いので、配布元を追加する。以後は `sudo apt upgrade` で一緒に更新される。
+補足：どちらも「署名鍵を置く → 配布元（apt リポジトリ）を登録する → apt で入れる」という同じ流れ。Ubuntu 標準の apt には入っていないか古いので、配布元を追加する。以後は `sudo apt upgrade` で一緒に更新される。仕組みは [番外編：apt の署名鍵と GPG](extra-apt-signing.md) を参照。
 - [x] `node -v`、`gh --version`、`terraform -version` がすべて通ることを確認する
 
 補足：wrangler はグローバルに入れず、プロジェクトごとに `npm install -D wrangler` してバージョンを固定する（`npx wrangler ...` で呼ぶ）。
@@ -94,7 +94,7 @@ sudo apt update && sudo apt install -y terraform
 ### 0-3. 作業ディレクトリを WSL に移す
 
 - [x] claude-sandbox 一式（Chrome 拡張機能を除く）を `~/claude-sandbox` に移動済み（2026-11-02、Claude が実施。`node_modules` / `.venv` は除外したので、各プロジェクトで必要になったら `npm install` などをやり直す）
-- [ ] infra の git 管理を始める
+- [x] infra の git 管理を始める
 
 ```bash
 cd ~/claude-sandbox/infra
