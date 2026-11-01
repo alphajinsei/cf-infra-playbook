@@ -14,7 +14,9 @@
 
 - 各ステップの「理解ポイント」に自分の言葉で答えられたら完了とする。
 - 詰まったら、エラー全文と実行したコマンドを Claude に渡す。
-- 開発環境：WSL2（Ubuntu）。作業ディレクトリは `~/claude-sandbox/infra`（サンプルは `~/claude-sandbox/infra/sample-app/` に作る）
+- 開発環境：WSL2（Ubuntu）。
+- ディレクトリ構成：サンプルアプリは方式ごとに `~/claude-sandbox/sample-<基盤>-<構成>/` として infra の隣に作り、それぞれ独立した git リポジトリにする（フォルダ名＝GitHub のリポジトリ名＝Worker の名前。小文字とハイフンのみ）。このロードマップのサンプルは `sample-cf-workers-d1`。
+- 作業の拠点は infra：VSCode は infra を開き、サンプルのフォルダを「フォルダーをワークスペースに追加」で並べる。Claude Code も infra で開き、サンプルのフォルダは `.claude/settings.json` の `additionalDirectories` に登録する（サンプルを増やしたら追記する）。
 - Windows と WSL の使い分け：`~/claude-sandbox` 配下（Web サービス、Ansible / Docker / bash を使うもの）は WSL。Windows を自動操作するスクリプトと Chrome 拡張機能（chrome-extention-for-claude-enter-key）は Windows に置く。1つのリポジトリを両方から編集しない。
 
 | Step | 内容 | 目安 | 主に学ぶこと |
@@ -102,26 +104,26 @@ printf '* text=auto eol=lf\n' > .gitattributes
 git init && git add . && git commit -m "Add infra design docs"
 ```
 
-- [ ] `code .` で VSCode を開き、左下に「WSL: Ubuntu」と表示されることを確認する
-- [ ] Windows 側に残っている `claude-sandbox\infra` と空の `claude-sandbox\todo` を削除する（以降は WSL 側だけを編集する）
+- [x] `code .` で VSCode を開き、左下に「WSL: Ubuntu」と表示されることを確認する
+- [x] Windows 側に残っている `claude-sandbox\infra` と空の `claude-sandbox\todo` を削除する（以降は WSL 側だけを編集する）
 
 ### 0-4. Claude Code を WSL 側で使えるようにする
 
-- [ ] WSL に接続した VSCode で Claude Code を開き、ログインする（WSL 側の設定は `~/.claude` で、Windows 側とは別になる）
-- [ ] Windows 側の自作スキルを WSL 側にコピーする
+- [x] WSL に接続した VSCode で Claude Code を開き、ログインする（WSL 側の設定は `~/.claude` で、Windows 側とは別になる）
+- [x] Windows 側の自作スキルを WSL 側にコピーする
 
 ```bash
 mkdir -p ~/.claude/skills
 cp -r /mnt/c/Users/peinn/.claude/skills/about-me /mnt/c/Users/peinn/.claude/skills/browser-check ~/.claude/skills/
 ```
 
-- [ ] 新しいセッションで `docs/learning-roadmap.md` を読ませ、続きから進める
+- [x] 新しいセッションで `docs/learning-roadmap.md` を読ませ、続きから進める
 
 ### 0-5. ログイン
 
-- [ ] `gh auth login` で GitHub にログイン（GitHub.com → HTTPS → ブラウザでログイン）
-- [ ] `npx wrangler login` で Cloudflare にログイン（Windows のブラウザで認可画面が開く）
-- [ ] `npx wrangler whoami` でアカウント名と ID が表示されることを確認する
+- [x] `gh auth login` で GitHub にログイン（GitHub.com → HTTPS → ブラウザでログイン）
+- [x] `npx wrangler login` で Cloudflare にログイン（Windows のブラウザで認可画面が開く）
+- [x] `gh auth status` と `npx wrangler whoami` で、ログインしたアカウントが表示されることを確認する
 
 理解ポイント：
 
@@ -132,7 +134,7 @@ cp -r /mnt/c/Users/peinn/.claude/skills/about-me /mnt/c/Users/peinn/.claude/skil
 
 やること：
 
-- [ ] `npm create cloudflare@latest sample-app` を実行し、「Hello World example」→「Worker only」→「TypeScript」を選ぶ（git は Yes、デプロイは No）
+- [ ] `cd ~/claude-sandbox && npm create cloudflare@latest sample-cf-workers-d1` を実行し、「Hello World example」→「Worker only」→「TypeScript」を選ぶ（git は Yes、デプロイは No）
 - [ ] 生成された `wrangler.jsonc`、`src/index.ts`、`package.json` を読む
 - [ ] `npx wrangler dev` でローカル起動し、ブラウザで表示を確認
 - [ ] `npx wrangler deploy` でデプロイし、`*.workers.dev` の URL で表示を確認
@@ -195,7 +197,7 @@ cp -r /mnt/c/Users/peinn/.claude/skills/about-me /mnt/c/Users/peinn/.claude/skil
 
 やること：
 
-- [ ] `npx wrangler d1 create sample-app-db` で DB を作り、出力された設定を `wrangler.jsonc` の `d1_databases` に追加する（binding 名は `DB`）
+- [ ] `npx wrangler d1 create sample-cf-workers-d1-db` で DB を作り、出力された設定を `wrangler.jsonc` の `d1_databases` に追加する（binding 名は `DB`）
 - [ ] `npx wrangler types` で型定義を生成し、コードから `c.env.DB` が補完されることを確認する
 - [ ] `npx wrangler d1 migrations create DB create_memos` で SQL ファイルを作り、`CREATE TABLE` を書く
 - [ ] `npx wrangler d1 migrations apply DB --local` でローカルに適用し、API を D1 に書き換えて `wrangler dev` で確認する（`c.env.DB.prepare(...).bind(...).all()`）
@@ -232,7 +234,7 @@ cp -r /mnt/c/Users/peinn/.claude/skills/about-me /mnt/c/Users/peinn/.claude/skil
 やること：
 
 - [ ] `.gitignore` に `node_modules/`、`.wrangler/`、`.dev.vars` が入っていることを確認する
-- [ ] `gh repo create sample-app --private --source . --push` で GitHub にリポジトリを作る
+- [ ] `gh repo create sample-cf-workers-d1 --private --source . --push` で GitHub にリポジトリを作る
 - [ ] ダッシュボードの Worker の Settings → Builds で GitHub リポジトリを接続する
 - [ ] 画面の文言を変えて push し、自動でデプロイされることを確認する
 - [ ] ブランチを切って push し、プレビュー URL が発行されることを確認する
@@ -253,7 +255,7 @@ cp -r /mnt/c/Users/peinn/.claude/skills/about-me /mnt/c/Users/peinn/.claude/skil
 
 - [ ] ダッシュボードで Terraform 用の API トークンを作る（Access の編集と Zone の読み取りなど、必要最小限の権限）
 - [ ] state 置き場として R2 バケット（例：`tfstate`）を手動で作り、R2 用の API トークンを発行する
-- [ ] `sample-app/infra/terraform/` に provider と backend を書く（backend は s3 互換設定で R2 を指す）
+- [ ] `sample-cf-workers-d1/infra/terraform/` に provider と backend を書く（backend は s3 互換設定で R2 を指す）
 - [ ] `terraform init` → `terraform plan` → `terraform apply`
 - [ ] `/admin` にアクセスし、ログインを求められることを確認する
 - [ ] ダッシュボードで設定を手で変えてから `terraform plan` を実行し、差分（drift）が検出されることを確認する

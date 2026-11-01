@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "additionalDirectories": [
+      "/home/alphajinsei/claude-sandbox/sample-cf-workers-d1"
+    ]
+  }
+}
