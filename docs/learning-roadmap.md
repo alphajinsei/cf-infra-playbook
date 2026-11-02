@@ -6,7 +6,7 @@
 
 標準構成のサンプルアプリ（メモ帳）を、自分の手で作ってデプロイし、構成管理まで一通り経験する。完了後は、各ステップで得た理解をもとに、以降のサービスのデプロイを Claude に任せられる状態にする。
 
-- 公開先（仮）：`sample.alphajinsei.com`
+- 公開先：`sample-cf-workers-d1.alphajinsei.com`
 - アプリ：メモの一覧・追加・削除ができる画面と API
 - 技術：TypeScript + Hono + D1（後半で Drizzle）、デプロイは wrangler → GitHub 連携、構成管理は Terraform
 
@@ -14,6 +14,7 @@
 
 - 各ステップの「理解ポイント」に自分の言葉で答えられたら完了とする。
 - 詰まったら、エラー全文と実行したコマンドを Claude に渡す。
+- 途中で分かったことは [勉強メモ](study-notes.md) に積み上げる。
 - 開発環境：WSL2（Ubuntu）。
 - ディレクトリ構成：サンプルアプリは方式ごとに `~/claude-sandbox/sample-<基盤>-<構成>/` として infra の隣に作り、それぞれ独立した git リポジトリにする（フォルダ名＝GitHub のリポジトリ名＝Worker の名前。小文字とハイフンのみ）。このロードマップのサンプルは `sample-cf-workers-d1`。
 - 作業の拠点は infra：VSCode は infra を開き、サンプルのフォルダを「フォルダーをワークスペースに追加」で並べる。Claude Code も infra で開き、サンプルのフォルダは `.claude/settings.json` の `additionalDirectories` に登録する（サンプルを増やしたら追記する）。
@@ -134,12 +135,12 @@ cp -r /mnt/c/Users/peinn/.claude/skills/about-me /mnt/c/Users/peinn/.claude/skil
 
 やること：
 
-- [ ] `cd ~/claude-sandbox && npm create cloudflare@latest sample-cf-workers-d1` を実行し、「Hello World example」→「Worker only」→「TypeScript」を選ぶ（git は Yes、デプロイは No）
-- [ ] 生成された `wrangler.jsonc`、`src/index.ts`、`package.json` を読む
-- [ ] `npx wrangler dev` でローカル起動し、ブラウザで表示を確認
-- [ ] `npx wrangler deploy` でデプロイし、`*.workers.dev` の URL で表示を確認
-- [ ] ダッシュボード（Workers & Pages）で、デプロイしたものを確認
-- [ ] `npx wrangler tail` を実行しながらアクセスし、ログが流れることを確認
+- [x] `cd ~/claude-sandbox && npm create cloudflare@latest sample-cf-workers-d1` を実行し、「Hello World example」→「Worker only」→「TypeScript」を選ぶ（git は Yes、デプロイは No）
+- [x] 生成された `wrangler.jsonc`、`src/index.ts`、`package.json` を読む
+- [x] `npx wrangler dev` でローカル起動し、ブラウザで表示を確認
+- [x] `npx wrangler deploy` でデプロイし、`*.workers.dev` の URL で表示を確認
+- [x] ダッシュボード（Workers & Pages）で、デプロイしたものを確認
+- [x] `npx wrangler tail` を実行しながらアクセスし、ログが流れることを確認
 
 理解ポイント：
 
@@ -147,21 +148,21 @@ cp -r /mnt/c/Users/peinn/.claude/skills/about-me /mnt/c/Users/peinn/.claude/skil
 - `wrangler dev` で動いているのは何か（ローカルの workerd という実行環境）。
 - Worker には「起動しっぱなしのサーバ」がない。では、リクエストが来たときに何が起きているか。
 
-参考：[Workers Get started](https://developers.cloudflare.com/workers/get-started/guide/)
+参考：[Workers Get started](https://developers.cloudflare.com/workers/get-started/guide/)、[番外編：Workers の実行環境](extra-workers-runtime.md)
 
 ## Step 2：カスタムドメインで公開
 
 やること：
 
-- [ ] `wrangler.jsonc` に以下を追加して `npx wrangler deploy`
+- [x] `wrangler.jsonc` に以下を追加して `npx wrangler deploy`
 
 ```jsonc
-"routes": [{ "pattern": "sample.alphajinsei.com", "custom_domain": true }]
+"routes": [{ "pattern": "sample-cf-workers-d1.alphajinsei.com", "custom_domain": true }]
 ```
 
-- [ ] `https://sample.alphajinsei.com` で表示を確認
-- [ ] ダッシュボードの DNS で、自動作成されたレコードを確認
-- [ ] `"workers_dev": false` を追加して workers.dev の URL を無効化してみる
+- [x] `https://sample-cf-workers-d1.alphajinsei.com` で表示を確認
+- [x] ダッシュボードの DNS で、自動作成されたレコードを確認
+- [x] `"workers_dev": false` を追加して workers.dev の URL を無効化してみる
 
 理解ポイント：
 
@@ -174,17 +175,32 @@ cp -r /mnt/c/Users/peinn/.claude/skills/about-me /mnt/c/Users/peinn/.claude/skil
 
 やること：
 
-- [ ] `npm install hono` で Hono を入れ、`src/index.ts` を Hono で書き直す
-- [ ] `GET /api/health` が `{"ok": true}` を返す API を作る
-- [ ] `public/index.html` を作り、`wrangler.jsonc` に Static Assets を設定する
+- [x] `npm install hono` で Hono を入れ、`src/index.ts` を Hono で書き直す
+- [x] `GET /api/health` が `{"ok": true}` を返す API を作る
+- [x] `public/index.html` を作り、`wrangler.jsonc` に Static Assets を設定する
 
 ```jsonc
 "assets": { "directory": "./public" }
 ```
 
-- [ ] 画面から `fetch('/api/health')` を呼び、結果を表示する
-- [ ] メモの一覧・追加・削除 API（`GET/POST /api/memos`、`DELETE /api/memos/:id`）を、まずはメモリ上の配列で作る
-- [ ] デプロイし、何度かアクセスしてメモが消えたり残ったりする様子を観察する
+- [x] 画面から `fetch('/api/health')` を呼び、結果を表示する
+- [x] メモの一覧・追加・削除 API（`GET/POST /api/memos`、`DELETE /api/memos/:id`）を、まずはメモリ上の配列で作る。`wrangler dev` を起動したまま curl で確かめる
+
+```bash
+curl http://localhost:8787/api/memos
+curl -X POST http://localhost:8787/api/memos -H "Content-Type: application/json" -d '{"text":"はじめてのメモ"}'
+curl -X DELETE http://localhost:8787/api/memos/1 -i
+```
+- [x] デプロイし、何度かアクセスしてメモが消えたり残ったりする様子を観察する
+
+```bash
+npx wrangler deploy
+URL=https://sample-cf-workers-d1.alphajinsei.com
+curl -X POST $URL/api/memos -H "Content-Type: application/json" -d '{"text":"本番のメモ"}'
+for i in $(seq 1 10); do curl -s $URL/api/memos; echo; done   # 10回続けて一覧を取る
+```
+
+観察のしかた：直後に何度か取る／数分〜数十分放置してから取る／スマホのモバイル回線から開く／もう一度デプロイしてから取る
 
 理解ポイント：
 
@@ -197,11 +213,17 @@ cp -r /mnt/c/Users/peinn/.claude/skills/about-me /mnt/c/Users/peinn/.claude/skil
 
 やること：
 
-- [ ] `npx wrangler d1 create sample-cf-workers-d1-db` で DB を作り、出力された設定を `wrangler.jsonc` の `d1_databases` に追加する（binding 名は `DB`）
-- [ ] `npx wrangler types` で型定義を生成し、コードから `c.env.DB` が補完されることを確認する
-- [ ] `npx wrangler d1 migrations create DB create_memos` で SQL ファイルを作り、`CREATE TABLE` を書く
-- [ ] `npx wrangler d1 migrations apply DB --local` でローカルに適用し、API を D1 に書き換えて `wrangler dev` で確認する（`c.env.DB.prepare(...).bind(...).all()`）
-- [ ] `npx wrangler d1 migrations apply DB --remote` で本番に適用し、デプロイする
+- [x] `npx wrangler d1 create sample-cf-workers-d1-db` で DB を作り、出力された設定を `wrangler.jsonc` の `d1_databases` に追加する（binding 名は `DB`）
+- [x] `npx wrangler types` で型定義を生成し、コードから `c.env.DB` が補完されることを確認する
+- [x] `npx wrangler d1 migrations create DB create_memos` で SQL ファイルを作り、`CREATE TABLE` を書く
+- [x] `npx wrangler d1 migrations apply DB --local` でローカルに適用し、API を D1 に書き換えて `wrangler dev` で確認する（`c.env.DB.prepare(...).bind(...).all()`）
+
+```bash
+npx wrangler d1 migrations list DB --local     # 未適用のマイグレーションを確認
+npx wrangler d1 migrations apply DB --local
+npx wrangler d1 execute DB --local --command "SELECT * FROM memos"   # ローカルの中身を見る
+```
+- [x] `npx wrangler d1 migrations apply DB --remote` で本番に適用し、デプロイする
 - [ ] `npx wrangler d1 execute DB --remote --command "SELECT * FROM memos"` で中身を見る
 
 理解ポイント：
@@ -249,7 +271,7 @@ cp -r /mnt/c/Users/peinn/.claude/skills/about-me /mnt/c/Users/peinn/.claude/skil
 
 ## Step 7：Terraform で Access を管理
 
-題材：`sample.alphajinsei.com/admin` を Access で保護する（保育園ページで手動でやっていることをコード化する）。
+題材：`sample-cf-workers-d1.alphajinsei.com/admin` を Access で保護する（保育園ページで手動でやっていることをコード化する）。
 
 やること：
 
@@ -275,7 +297,7 @@ cp -r /mnt/c/Users/peinn/.claude/skills/about-me /mnt/c/Users/peinn/.claude/skil
 
 - [ ] `wrangler.jsonc` で `"observability": { "enabled": true }` を設定し、ダッシュボードでログを検索する
 - [ ] Cron Triggers を設定し、1日1回、古いメモを消す（または件数をログに出す）`scheduled()` を書く
-- [ ] UptimeRobot で `https://sample.alphajinsei.com/api/health` を監視し、通知を受け取れるようにする
+- [ ] UptimeRobot で `https://sample-cf-workers-d1.alphajinsei.com/api/health` を監視し、通知を受け取れるようにする
 - [ ] `npx wrangler d1 export DB --remote --output backup.sql` でバックアップを取ってみる。D1 の Time Travel（過去の時点への復元）の仕組みも調べる
 
 理解ポイント：

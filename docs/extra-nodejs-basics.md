@@ -15,6 +15,27 @@
 
 使う順番：nvm で Node.js を入れる → npm で wrangler や Hono を入れる → npx で wrangler を実行する。
 
+## npm create（ひな形を作るコマンド）
+
+`npm create` は npm に最初からあるサブコマンドで、`npm init` の別名。npm は次の読み替えのルールを決めている。
+
+| 打つコマンド | npm が実際に実行するもの |
+| --- | --- |
+| `npm create foo` | `npx create-foo` |
+| `npm create @foo` | `npx @foo/create` |
+
+npm 自身は Cloudflare のことを知らない。ひな形を作るツールを配る側が、このルールに合わせてパッケージ名を `create-` で始めて公開している（`create-cloudflare`、`create-vite`、`create-next-app` など）。なので `npm create cloudflare@latest sample-cf-workers-d1` は `npx create-cloudflare@latest sample-cf-workers-d1` と同じ。
+
+`create-cloudflare`（通称 C3）がやること：
+
+1. 質問に答えた内容に合わせて、ひな形のファイルをフォルダに書き出す
+2. そのフォルダで `npm install` を実行し、wrangler などを `node_modules/` に入れる
+3. git を使うと答えたら、`git init` と最初のコミットまでする
+
+C3 自体は一時的な場所で実行されるだけで、プロジェクトには入らない。できあがったプロジェクトで働くのは 2 で入った wrangler。
+
+ちなみに引数なしの `npm init` は `package.json` を1つ作るだけで、こちらが `git init` に相当する。
+
 ## Node.js のバージョン
 
 - 数字が大きいほど新しい。偶数のバージョンが長期サポート版（LTS）で、数年間はバグや脆弱性の修正が続く。
