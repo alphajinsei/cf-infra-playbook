@@ -144,7 +144,7 @@ mkdir ~/claude-sandbox/oci-platform && cd ~/claude-sandbox/oci-platform && git i
 
 2023年に作ったものを、中身を確かめずにバックアップしてから消す。消すのはコンソールでも CLI でもよい（VCN はコンソールの「Delete」が、サブネットやゲートウェイも一度に消してくれて楽）。
 
-- [ ] 全コンパートメントの、残っているリソースを一覧にする（読むだけ）
+- [x] 全コンパートメントの、残っているリソースを一覧にする（読むだけ）
 
 ```bash
 oci search resource structured-search --query-text \
@@ -156,7 +156,7 @@ oci search resource structured-search --query-text \
 - `--all` はない。`--limit` を付けないと1ページで切れることがある。
 - `OsmhSoftwareSource`（OS Management Hub が見せている Oracle Linux のパッケージ配布元。自分のリソースではなく、無料）が大量に出るので、`--query` で除く：`--query 'data.items[?"resource-type"!=`"OsmhSoftwareSource"`].{...}'`
 
-- [ ] マイクロ2台を止めてから、2台のブートボリュームと 50GB のブロックボリュームのバックアップを取る（止めると、書き込みの途中のない状態で取れる。バックアップは5つまで無料）。ID は上の一覧の BootVolume と Volume の行から
+- [x] マイクロ2台を止めてから、2台のブートボリュームと 50GB のブロックボリュームのバックアップを取る（止めると、書き込みの途中のない状態で取れる。バックアップは5つまで無料）。ID は上の一覧の BootVolume と Volume の行から。実際は、ブロックボリュームは何にも使っていなかったので、バックアップを取らずに消した
 
 ```bash
 oci compute instance action --action STOP --instance-id <インスタンスの ID> --wait-for-state STOPPED
@@ -166,8 +166,8 @@ oci bv backup create --volume-id <ブロックボリュームの ID> --type FULL
   --display-name <VM 名>-data-20261104 --wait-for-state AVAILABLE
 ```
 
-- [ ] カスタムイメージが要るか確かめる（毎月数円の保管料の元）。要らなければ消す
-- [ ] マイクロ2台、ブロックボリューム、HeatWave（Always Free は1台なので作り直す）、古い VCN を消す。インスタンスを消しても、付いていたブロックボリュームは残るので、別に消す
+- [x] カスタムイメージが要るか確かめる（毎月数円の保管料の元）。要らなければ消す
+- [x] マイクロ2台、ブロックボリューム、HeatWave（Always Free は1台なので作り直す）、古い VCN を消す。インスタンスを消しても、付いていたブロックボリュームは残るので、別に消す
 
 ```bash
 oci compute instance terminate --instance-id <インスタンスの ID> --preserve-boot-volume false --wait-for-state TERMINATED
@@ -175,12 +175,30 @@ oci bv volume delete --volume-id <ブロックボリュームの ID> --wait-for-
 oci mysql db-system delete --db-system-id <HeatWave の ID> --wait-for-state DELETED
 ```
 
-- [ ] もう一度一覧を出して、残っているのがバックアップ、コンパートメント、`tfstate` バケットなどだけであることを確かめる
+- [x] もう一度一覧を出して、残っているのがバックアップ、コンパートメント、`tfstate` バケットなどだけであることを確かめる（Oracle が作ったもの（`Tenant Admin Policy`、`PSM-*`、`ManagedCompartmentForPaaS`、`Oracle-Tags`、`OsmhProfile`）と予算は残す。古い VCN `vcn-20231009-1034` と DRG が1つずつ残っているが、新しい VCN と合わせて2つで、上限内）
 - [ ] 翌日、Cost Analysis でバックアップの分の金額が増えていないかを確かめる（毎月数円のカスタムイメージ代は既にある）
 
 ## Step 2：ネットワーク
 
-- [ ] VCN、サブネット5つ、Internet GW / NAT GW / Service GW、ルート表、NSG を Terraform で作る
+コードは `~/claude-sandbox/oci-platform/terraform/`（`network.tf` と `nsg.tf`）。中身と理由は [方式検討：OCI の 4](../design/oci.md#4-ネットワーク)。
+
+- [x] VCN、サブネット5つ、Internet GW / NAT GW / Service GW、ルート表、NSG を Terraform で作る（48 リソース）。plan では、作られるもの（VCN 1、サブネット 5、ゲートウェイ 3、ルート表 3、NSG 5、NSG のルール 30前後）を見てから apply する
+
+```bash
+cd ~/claude-sandbox/oci-platform/terraform
+terraform init        # provider のダウンロードと、backend（tfstate バケット）への接続
+terraform plan
+terraform apply
+```
+
+- [ ] GitHub にリポジトリを作って push する（`.terraform.lock.hcl` も入れる。provider の版を固定するファイル）
+
+```bash
+cd ~/claude-sandbox/oci-platform
+git add -A && git commit -m "Add network (VCN, subnets, gateways, NSGs)"
+gh repo create oci-platform --public --source . --push
+```
+
 - [ ] 翌日、Cost Analysis で NAT Gateway の分の金額が増えていないかを確かめる
 
 理解ポイント：
@@ -208,6 +226,7 @@ oci mysql db-system delete --db-system-id <HeatWave の ID> --wait-for-state DEL
 
 ## Step 5：LB と公開
 
+- [ ] Cloudflare の SSL/TLS の暗号化モードを確かめる。Cloudflare → LB を HTTPS にして証明書も検証する Full (strict) にする（ゾーン全体か、③のホスト名だけを Configuration Rule で）。Flexible のままだと、LB の 80番に HTTP でつなぎに行って失敗する
 - [ ] Cloudflare の Origin 証明書（`*.alphajinsei.com`）を作り、OCI の LB に入れる
 - [ ] LB を作る。nsg-lb で Cloudflare の IP 範囲だけを受ける
 - [ ] 仮のコンテナ（nginx など）を1つ置き、サブドメインから見えるところまで

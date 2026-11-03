@@ -159,6 +159,17 @@ NSG は、VM や LB など、リソース単位にかけるファイアウォー
 
 パス方式の利点は「DNS を触らなくてよい」くらいで、それも Terraform で書けば手間にならない。Cloudflare 側（①②）もサブドメインなので、方式としてもそろう。
 
+### TLS：Cloudflare → LB も HTTPS（Full (strict)）
+
+```
+Client --HTTPS--> Cloudflare edge --HTTPS (Origin CA cert, verified)--> OCI LB :443 --HTTP--> app :8000-8099
+```
+
+- Cloudflare の暗号化モードは Full (strict)。Cloudflare → LB も HTTPS で、Origin 証明書を検証する。Flexible（Cloudflare → オリジンが HTTP）は使わない。
+- TLS は LB で終わり、LB → アプリは VCN の中の HTTP。アプリは TLS を持たない。
+- LB が受けるのは 443番だけ。http → https の転送は Cloudflare の「Always Use HTTPS」がエッジで行う。
+- 暗号化モードはゾーン全体の設定。Workers と Pages はエッジで動くので影響を受けない。
+
 ### LB から先：アプリごとにポートとバックエンド・セット
 
 - アプリごとに、Docker ホストのポートを1つ決める（`aaa` → `:8001`、`bbb` → `:8002`）。ポートは共通基盤の README に台帳を置く。

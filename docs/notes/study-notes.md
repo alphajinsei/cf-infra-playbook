@@ -140,6 +140,8 @@
 - OCI の Ubuntu イメージは、VM の中の iptables で 22 番以外を拒否している。NSG を開けても、VM の中も開けないと届かない。
 - Bastion は、VM の 22 番に最長3時間だけ通れるセッションを作る、OCI の踏み台。VM に公開 IP が要らない。いざというときは、コンソール接続（シリアルコンソール）でネットワークを通らずに入れる。
 - OCI が塞いでいるのは外へ出す 25 番だけ。自前のメールサーバーは、受信は 25 番で直接受け、送信は Email Delivery に 587 番で中継すると、申請も IP の評判の問題も避けられる。
+- Cloudflare の DNS でプロキシ（オレンジの雲）を有効にすると、名前解決で返るのは Cloudflare のエッジの IP になる。利用者がつなぐのは Cloudflare で、Cloudflare が改めてオリジン（OCI の LB）につなぎ直す。そのため LB に来るのは Cloudflare の IP だけで、NSG でそこに絞れば、LB の IP を直接たたく迂回を防げる。Origin 証明書はブラウザに信頼されず Cloudflare だけが信頼するので、プロキシを外すと HTTPS も通らなくなる。
+- Cloudflare とオリジンの間の暗号化は、SSL/TLS の暗号化モードで決まる。Flexible は Cloudflare → オリジンが HTTP、Full は HTTPS だが証明書を検証しない、Full (strict) は HTTPS で証明書も検証する。③は Full (strict) で、LB が受けるのは 443番だけ。モードはゾーン全体の設定だが、Workers・Pages はエッジで動くので、①②では関係がなかった。
 - Terraform の state は、公式の `oci` backend で Object Storage に置ける（ロックあり。S3 互換の方法は非推奨）。
 - A1 は Arm なので、x86 の WSL でビルドするイメージは `docker buildx --platform linux/arm64` でクロスビルドする。
 - サブドメインとパスの振り分けの比較：パスにすると、アプリ全体に base path の設定が要り、Cookie などのオリジンも共有になる。サブドメインなら Origin 証明書 `*.alphajinsei.com` 1枚で足り、方式をまたいで DNS の向け先を変えるだけで移せる。→ [方式検討：OCI](../design/oci.md)
