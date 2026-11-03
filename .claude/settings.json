@@ -5,7 +5,9 @@
       "/home/alphajinsei/claude-sandbox/sample-cf-workers-static"
     ],
     "deny": [
-      "Read(~/claude-sandbox/infra/.secrets/**)"
+      "Read(~/claude-sandbox/infra/.secrets/**)",
+      "Read(//mnt/c/Users/peinn/sandbox/OCI/*.key)",
+      "Read(//mnt/c/Users/peinn/sandbox/OCI/Wallet_*)"
     ]
   }
 }

@@ -392,4 +392,6 @@ gh repo edit alphajinsei/sample-cf-workers-static --visibility public --accept-v
 gh repo create <name> --template alphajinsei/sample-cf-workers-d1 --public --clone
 ```
 - [x] サービス開発側に渡すインフラ設計資料をまとめる：全方式共通は [サービス開発ガイド](service-guide.md)、方式ごとは各サンプルの `README.md`（見出しは6つにそろえる）
-- [ ] 以降のサービスのデプロイは Claude に任せる
+- [ ] 以降のサービスのデプロイは Claude に任せる（実際のサービスを作るときに）
+
+次：方式③（OCI）のサンプル。別のセッションで始める。引き継ぎは [handoff-method3-oci.md](handoff-method3-oci.md)

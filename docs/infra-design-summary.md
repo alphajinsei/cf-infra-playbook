@@ -26,8 +26,8 @@
 | ⓪ 既存・Pages | Cloudflare Pages + GitHub 連携（push でデプロイ） | 既存のサイト（dia-logos）だけ。新しいサービスには使わない |
 | ① 標準・静的 | Cloudflare Workers Static Assets（コードのない Worker）。Markdown なら Astro でビルド | 静的サイト、SPA |
 | ② 標準・アプリ + DB | Cloudflare Workers + D1（必要に応じて R2 / Access / Cron）。TypeScript + Hono + Drizzle | DBを使うアプリ全般。既定の選択肢 |
-| ③ 学習方式 | AWS Lambda + DynamoDB、GCP Cloud Run + Firestore、Azure Functions + Azure SQL など | 大手クラウドを触る目的で、1サービスずつ試す |
-| ④ 汎用VM方式 | OCI Always Free VM + Docker + Dokploy/Coolify + Cloudflare Tunnel | Workersで動かないもの（常駐プロセス、任意の言語、PostgreSQLが必須なもの） |
+| ③ 汎用VM方式 | OCI Always Free VM + Docker + Dokploy/Coolify + Cloudflare Tunnel | Workersで動かないもの（常駐プロセス、任意の言語、PostgreSQLが必須なもの） |
+| ④ 学習方式 | AWS Lambda + DynamoDB、GCP Cloud Run + Firestore、Azure Functions + Azure SQL など | 大手クラウドを触る目的で、1サービスずつ試す |
 
 標準を Cloudflare にする理由：
 

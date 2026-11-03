@@ -46,7 +46,7 @@
 - Worker はサーバーを起動して待ち受けるのではない。コードは、デプロイ時に世界中のデータセンターに配られる。リクエストが着いたサーバーで isolate を用意し、`fetch()` を呼ぶ。→ [番外編：Workers の実行環境](extra-workers-runtime.md)
 - `main` は実行するコード、`assets` はそのまま返すファイル。パスに合うファイルが `public/` にあれば、エッジがそれを返す（Worker は呼ばれない）。なければ Worker の `fetch()` が呼ばれる。振り分けているのは Cloudflare のエッジで、自分のコードではない。
 - `wrangler dev` は起動中に1文字のキー操作を受け付ける（`b` ブラウザ、`t` トンネル、`x` 終了など）。VSCode のターミナルで Ctrl+V は貼り付けなので、貼り付けた文字がキー操作として次々に実行されることがある。実際に起きたのは次の2つで、どちらも Ctrl+C で止まり、本番のデプロイ履歴には何も残らなかった。
-  - `t`：`cloudflared` を自動でダウンロードし、Quick Tunnel（`*.trycloudflare.com` の使い捨て URL）で手元の dev サーバーを一時的にインターネットに公開する。URL を知っている人は誰でもアクセスできる。Cloudflare Tunnel は、設計方針の「方式④」（VM を、ポートを開けずに公開する）で使う予定の技術。
+  - `t`：`cloudflared` を自動でダウンロードし、Quick Tunnel（`*.trycloudflare.com` の使い捨て URL）で手元の dev サーバーを一時的にインターネットに公開する。URL を知っている人は誰でもアクセスできる。Cloudflare Tunnel は、設計方針の「方式③」（VM を、ポートを開けずに公開する）で使う予定の技術。
   - ローカル／リモートの切り替え：remote preview にすると、Cloudflare 上で Worker をプレビューとして動かし、D1 も本番の DB につながる。本番のデプロイとは別物。
 
 ## ドメインと DNS

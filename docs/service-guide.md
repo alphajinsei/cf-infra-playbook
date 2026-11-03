@@ -41,8 +41,8 @@
 | --- | --- |
 | 記事・ページを表示するだけ（Markdown のブログ、SPA） | ① 標準・静的 |
 | データを保存・検索するアプリ（フォーム、メモ、API、Bot の Webhook） | ② 標準・アプリ + DB |
-| Workers で動かないもの（常駐プロセス、WebSocket の常時接続、任意の言語、PostgreSQL が必須） | ④ 汎用VM（準備中） |
-| 大手クラウドを触ってみたい | ③ 学習方式（サービスごとに試す） |
+| Workers で動かないもの（常駐プロセス、WebSocket の常時接続、任意の言語、PostgreSQL が必須） | ③ 汎用VM（準備中） |
+| 大手クラウドを触ってみたい | ④ 学習方式（サービスごとに試す） |
 
 ①で始めて、あとから API が欲しくなったら、同じ Worker に `main` を足せば②になる。
 
@@ -57,8 +57,8 @@
 | ⓪ 既存・Pages（新規には使わない） | なし（既存の例：`dia-logos`） | Cloudflare Pages + GitHub 連携。main に push すると Cloudflare がリポジトリを取りに行ってビルド・デプロイする | なし（下の「⓪ について」） |
 | ① 標準・静的 | `sample-cf-workers-static` | Astro（SSG）+ Workers Static Assets | [README](https://github.com/alphajinsei/sample-cf-workers-static#readme) |
 | ② 標準・アプリ + DB | `sample-cf-workers-d1` | Workers + Hono + D1 + Drizzle、Access は Terraform | [README](https://github.com/alphajinsei/sample-cf-workers-d1#readme) |
-| ③ 学習方式 | 未作成 | | |
-| ④ 汎用VM | 未作成（OCI の VM と ADB は作成済み） | OCI VM + Docker + PostgreSQL + Cloudflare Tunnel（予定） | |
+| ③ 汎用VM | 未作成（OCI の VM と ADB は作成済み） | OCI VM + Docker + PostgreSQL + Cloudflare Tunnel（予定） | |
+| ④ 学習方式 | 未作成 | | |
 
 手元では `~/claude-sandbox/<サンプル名>/README.md`。
 
