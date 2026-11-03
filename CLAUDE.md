@@ -25,7 +25,7 @@
 └── sample-<基盤>-<構成>/   方式ごとのサンプルアプリ。それぞれ独立した git リポジトリ
     例：sample-cf-workers-d1（方式②：アプリ + D1。ロードマップのサンプル）
         sample-cf-workers-static（方式①：Astro の静的サイト）
-└── oci-platform/           方式③の共通基盤（予定。名前は仮）。サンプルは sample-oci-vm-docker（予定）
+└── oci-platform/           方式③の共通基盤（Terraform + Ansible）。サンプルは sample-oci-vm-docker（作成予定）
 ```
 
 - infra は GitHub では `alphajinsei/cf-infra-playbook`（公開）。手元のフォルダ名は infra のまま。公開リポジトリなので、秘密情報や個人のメールアドレスを書かない。コミットの作者は noreply アドレス（リポジトリ単位で `git config user.email` に設定済み）。

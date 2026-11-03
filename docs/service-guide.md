@@ -57,7 +57,7 @@
 | ⓪ 既存・Pages（新規には使わない） | なし（既存の例：`dia-logos`） | Cloudflare Pages + GitHub 連携。main に push すると Cloudflare がリポジトリを取りに行ってビルド・デプロイする | なし（下の「⓪ について」） |
 | ① 標準・静的 | `sample-cf-workers-static` | Astro（SSG）+ Workers Static Assets | [README](https://github.com/alphajinsei/sample-cf-workers-static#readme) |
 | ② 標準・アプリ + DB | `sample-cf-workers-d1` | Workers + Hono + D1 + Drizzle、Access は Terraform | [README](https://github.com/alphajinsei/sample-cf-workers-d1#readme) |
-| ③ 汎用VM | 作成中（共通基盤 `oci-platform` + サンプル `sample-oci-vm-docker`、名前は仮） | OCI Always Free：Cloudflare → Flexible LB → Docker ホスト（A1）→ MySQL HeatWave。構成は [方式検討：OCI](design/oci.md) | |
+| ③ 汎用VM | 作成中（共通基盤 `oci-platform` + サンプル `sample-oci-vm-docker`） | OCI Always Free：Cloudflare → Flexible LB → Docker ホスト（A1）→ MySQL HeatWave。構成は [方式検討：OCI](design/oci.md) | |
 | ④ 学習方式 | 未作成 | | |
 
 手元では `~/claude-sandbox/<サンプル名>/README.md`。

@@ -236,7 +236,7 @@ Dev PC (WSL)
                              bucket) reading platform outputs via terraform_remote_state
 ```
 
-名前は仮（実装のときに決める）。アプリ側の Terraform にアプリ固有の LB 設定を持たせるので、「1サービス＝1ディレクトリ」は③でも残る。
+アプリ側の Terraform にアプリ固有の LB 設定を持たせるので、「1サービス＝1ディレクトリ」は③でも残る。
 
 ### アプリが受け取るもの（共通基盤の仕様）
 
