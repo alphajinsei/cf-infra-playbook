@@ -24,7 +24,7 @@ Cloudflare (DNS / proxy / WAF)                   |
 | v                                              v                           |
 | public-lb  10.0.0.0/24                   public-dmz  10.0.1.0/24           |
 |   Flexible LB (10Mbps)                     mail (A1 1 OCPU / 4GB)          |
-|   host-based routing, 1 backend set/app      + block volume 30GB           |
+|   host-based routing, 1 backend set/app      mail data in /srv/mail        |
 |     |  TCP 8000-8099                         outbound -> Email Delivery      |
 |     v                                        (relay on 587)                |
 | private-app  10.0.10.0/24                private-ops  10.0.30.0/24         |
@@ -64,6 +64,12 @@ Dev PC (WSL) -- npm run deploy -----------------> build arm64 image -> OCIR -> a
 
 2026-11-03 に [公式ドキュメント](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm) で確認した値。Always Free のリソースはホームリージョンに作る。アカウントは有料（Pay As You Go）に移行済みなので、使用率が低い VM の回収の対象にならない。そのかわり、枠を超えると課金されるので、予算アラートを必ず置く。
 
+### OS：Ubuntu 24.04
+
+- コンテナを載せる基盤として素直な方を選ぶ。Docker の公式のサポート対象で、コンテナ・メールサーバー・Arm の情報も、Ubuntu / Debian 前提のものが一番多い。
+- 比べた Oracle Linux 9（業務の RHEL と同じ系統）は、Docker の公式のサポート対象外（動くが、Oracle が推すのは podman）。SELinux と firewalld が、Docker やメールサーバーと噛み合わない場面があり（ボリュームのラベル、firewalld の reload で Docker のルールが消える、など）、外側を NSG で守る今回の構成では、引っかかるだけ損になる。マイクロ（1GB）では dnf も重い。
+- 再起動なしのカーネルの更新は、Ubuntu Pro の Livepatch（個人は5台まで無料）で試せる。
+
 ### コンピュート
 
 | 枠 | 上限 | 割り振り |
@@ -75,18 +81,20 @@ Dev PC (WSL) -- npm run deploy -----------------> build arm64 image -> OCIR -> a
 - Docker ホストに多めに配る。Keycloak や自作の認証基盤（Java などはメモリを 1〜2GB 使う）が載るため。メールは Postfix + Dovecot + Rspamd なら 4GB で足り、ClamAV を足しても収まる。
 - A1 は東京などで「Out of host capacity」（空きがない）が出やすい。時間を置くか、別の AD で試す。
 
-### ディスク（ブートボリュームとブロックボリュームの合計で 200GB、ブロックボリュームは2つまで）
+### ディスク（ブートボリュームとブロックボリュームの合計で 200GB、ブロックボリュームは2つまで・1つ 50GB 以上）
 
 | VM | ブート | ブロック | 計 |
 | --- | --- | --- | --- |
 | ops | 47 | | 47 |
 | app | 47 | | 47 |
-| mail | 47 | 30（メールボックス） | 77 |
-| 合計 | | | **171GB（29GB 余る）** |
+| mail | 47 | | 47 |
+| 合計 | | | **141GB（59GB 余る）** |
 
 - ブートボリュームは 47GB より小さくできない。そのため、VM 4台に別のボリュームを足すと 200GB を超える。マイクロ2台に A1 2台（4台）は入るが、余りがなくなる。そこでマイクロは1台に減らした。
 - コンテナイメージは1つ数百MB で、`docker image prune` で古いものを消せば、ブートボリュームで足りる。足りなくなったら、ブートボリュームを止めずに大きくできる。
-- 別のブロックボリュームは「VM を作り直しても残したいデータ」にだけ使う（メールボックス）。app のデータは HeatWave と Object Storage に置くので、作り直しても消えない。
+- ブロックボリュームは使わない。最小が 50GB で枠を大きく食う一方、利点は「VM を作り直してもデータが残る」ことだけ。メールのデータはブートボリュームの `/srv/mail` に置き、ブートボリュームのバックアップと、Object Storage への定期的な退避で守る（Step 8）。
+- あとでブロックボリュームに移すときは、ボリュームを付ける → メールを止める → `/srv/mail` を rsync でコピー → `/srv/mail` にマウントし直す、で済む（30分ほど）。そのために、メールのデータは最初から `/srv/mail` にまとめる。
+- app のデータは HeatWave と Object Storage に置くので、作り直しても消えない。
 - バックアップ：ボリュームのバックアップは5つまで無料。
 
 ### そのほか使うもの
@@ -139,7 +147,7 @@ NSG は、VM や LB など、リソース単位にかけるファイアウォー
 | nsg-db | HeatWave | TCP 3306 | nsg-app、nsg-ops |
 
 - アプリ用のポートは 8000〜8099 を一度に開けておく。アプリを足すたびに NSG を触らない。
-- OCI の Ubuntu イメージは、VM の中の iptables で 22 番以外を拒否するのが初期設定。NSG を開けても届かないので、Ansible で VM の中も開ける。
+- OCI の Ubuntu イメージは、VM の中の iptables でも 22 番以外を拒否するのが初期設定。NSG を開けても届かないので、Ansible で VM の中も開ける（mail のポート）。Docker で公開するポートは Docker が自分で足す。
 
 ### 要確認
 
@@ -200,12 +208,11 @@ Client --HTTPS--> Cloudflare edge --HTTPS (Origin CA cert, verified)--> OCI LB :
 | 道具 | 管理するもの | 実行する場所 |
 | --- | --- | --- |
 | Terraform（OCI provider、Cloudflare provider） | OCI のリソースすべて（VCN、NSG、VM、ボリュームのアタッチ、LB、HeatWave、Bastion、Vault、監視、予算）と Cloudflare の DNS レコード | 手元の WSL |
-| Ansible | VM の中：パッケージと OS の更新の設定、iptables、Docker、ブロックボリュームのフォーマットとマウント、メールサーバーの設定 | 手元の WSL（Bastion 経由の ssh） |
+| Ansible | VM の中：パッケージと OS の更新の設定、iptables、Docker、swap、メールサーバーの設定。手で流す更新（`upgrade.yml`） | 手元の WSL（Bastion 経由の ssh） |
 | デプロイのスクリプト | アプリのコンテナの入れ替え、マイグレーション | 手元の WSL（`npm run deploy`） |
 
 - **state は OCI Object Storage に置く。** Terraform の公式の `oci` backend を使う（ロックあり。S3 互換の方法は非推奨）。バケットだけは最初に CLI で手作りし、バージョニングを有効にする（R2 のときと同じ「鶏と卵」）。キーは `<リポジトリ名>/terraform.tfstate`。
 - **Ansible を使う。** VM が ops・app・mail の3種類あり、ボリュームのマウント、メールの設定、OS の更新、脆弱性への対応など、VM の中の作業を続けて回すため。cloud-init は使わず、VM の中の設定は Ansible に寄せる。
-- ブロックボリュームは準仮想化（paravirtualized）でアタッチする（iSCSI のコマンドが要らない）。LVM は使わず、ボリュームに直接ファイルシステムを作る。容量を増やすときは、OCI 側で大きくしてから `resize2fs`。
 
 ### SSH は Bastion
 
@@ -275,7 +282,7 @@ Dev PC (WSL)
 | 受信 | 外から mail VM の 25 番に直接届く。MX レコードは mail の予約パブリック IP に向ける | OCI が塞いでいるのは外へ出す 25 番だけで、受信の 25 番は塞がれていない |
 | 送信 | 自前の Postfix から OCI Email Delivery に 587 番で中継する（スマートホスト） | 外への 25 番の解除の申請も、クラウドの IP の評判の問題も避けられ、Gmail などに届きやすい |
 | 認証の DNS | SPF・DKIM・DMARC のレコードを Cloudflare に置く | |
-| データ | メールボックスはブロックボリュームに置く | VM を作り直しても残す |
+| データ | メールボックスは `/srv/mail`（ブートボリューム）に置き、Object Storage に定期的に退避する | ブロックボリュームは枠を食うので使わない（3） |
 
 受信・メールボックス・IMAP は自分で持ち、配達だけをマネージドに任せる。メールは状態を持つサービスなので、Docker ホストではなく VM 単体で動かす。
 
@@ -304,7 +311,8 @@ Dev PC (WSL)
 | Vault | DB のパスワード、OCIR のトークン。VM はインスタンス・プリンシパルで取りに行く（手元にも VM のディスクにも置かない） |
 | Monitoring + Notifications | アラーム：LB の異常なバックエンドが1つ以上、VM の CPU・メモリ、HeatWave のストレージ。通知はメール |
 | Budget | 予算アラート（金額が0円を超えたら通知）。枠を超えて課金されたことに気付くため |
-| OS の更新 | unattended-upgrades で自動。設定は Ansible |
+| OS の更新（自動） | unattended-upgrades でセキュリティの更新だけ毎日入れる。**自動で再起動しない。Docker 本体は対象外**。needrestart にも Docker を再起動させない。Docker は `live-restore` で、デーモンが再起動してもコンテナを止めない。これで、勝手にコンテナが止まることはない |
+| OS の更新（手動） | 月に1回などで `ansible-playbook upgrade.yml`。カーネルと Docker も含めて全部更新し、再起動が要る VM だけ1台ずつ再起動する（その間、その VM のコンテナは1〜2分止まる）。コンテナの中身は OS の更新では直らないので、イメージの作り直し（デプロイ）で更新する |
 | バックアップ | HeatWave は自動バックアップ。メールのボリュームはボリュームのバックアップ。Terraform の state はバケットのバージョニング |
 
 ## 12. 要確認のまとめ
@@ -326,8 +334,11 @@ Dev PC (WSL)
 1. **当初の案**（Cloudflare の検討のとき）：OCI の VM 1台 + Docker + Dokploy/Coolify + Cloudflare Tunnel。DB は VM 上の PostgreSQL。Workers で動かないものの受け皿として、最小の形を考えていた。
 2. **3層の構成に広げた**：Always Free に LB、MySQL HeatWave、Bastion、Vault、監視などが含まれ、「LB があってサーバーがあって DB がある」教科書どおりの構成が無料で組めると分かった。学習にもなるので、Tunnel で直接公開する形から、Cloudflare → LB → VM → DB の形に変えた。Dokploy は入れず、デプロイは①②と同じく手元から1コマンドにした。
 3. **DB**：PostgreSQL は Always Free にない。HeatWave（MySQL）・Autonomous DB・NoSQL・VM 上の PostgreSQL を比べ、非公開の経路、自動停止がないこと、ORM がそのまま使えることから HeatWave にした（6）。
-4. **アプリ VM 2台 → 1台**：最初は A1 を2台に分けて冗長化する案だった。しかし A1 の枠が 4 OCPU / 24GB から 2 / 12 に減っていた。さらにディスクの 200GB はブートボリュームも込みで、作業用の VM とメール用の VM も欲しいことから、Docker ホストは1台にして冗長化をあきらめた。LB は残した（2）。
-5. **SSH：Cloudflare Tunnel → Bastion**：Tunnel なら `ssh` が普通に通るが、Cloudflare 側の障害時に入れなくなるのが気になった。Tunnel の本来の用途は自宅のサーバーを公開することで、今回は枝葉の使い方になる。OCI の標準の踏み台である Bastion にし、手間はラッパーのスクリプトで減らす（7）。
-6. **VM の中の設定：cloud-init → Ansible**：VM が1種類で Docker を入れるだけなら cloud-init で足りた。しかし ops・app・mail の3種類になり、ボリュームのマウントやメールの設定、継続的な OS の更新と脆弱性への対応が要るので、Ansible にした（7）。
-7. **Terraform の state：R2 → OCI Object Storage**：OCI の中で閉じるほうが③には合う。公式の `oci` backend がロックにも対応している（7）。
-8. **作業用の VM**：既存のマイクロ2台（2023年に勉強で作ったもの）は、ブートボリュームのバックアップを取ってから消す。残すものを調べる手間を、必要になったときに先送りできる。作業用の VM は、新しい VCN に作り直す（ops）。
+4. **SSH：Cloudflare Tunnel → Bastion**：Tunnel なら `ssh` が普通に通るが、Cloudflare 側の障害時に入れなくなるのが気になった。Tunnel の本来の用途は自宅のサーバーを公開することで、今回は枝葉の使い方になる。OCI の標準の踏み台である Bastion にし、手間はラッパーのスクリプトで減らす（7）。
+5. **VM の中の設定：cloud-init → Ansible**：VM が1種類で Docker を入れるだけなら cloud-init で足りた。しかし ops・app・mail の3種類になり、ボリュームのマウントやメールの設定、継続的な OS の更新と脆弱性への対応が要るので、Ansible にした（7）。
+6. **Terraform の state：R2 → OCI Object Storage**：OCI の中で閉じるほうが③には合う。公式の `oci` backend がロックにも対応している（7）。
+7. **アプリ VM 2台 → 1台**：最初は A1 を2台に分けて冗長化する案だった。しかし A1 の枠が 4 OCPU / 24GB から 2 / 12 に減っていた。さらにディスクの 200GB はブートボリュームも込みで、作業用の VM とメール用の VM も欲しいことから、Docker ホストは1台にして冗長化をあきらめた。LB は残した（2）。
+8. **OS：Ubuntu → Oracle Linux 9 → Ubuntu**：業務で RHEL を使っているので、一度は同じ系統の Oracle Linux 9 に書き換えた。しかし SELinux・firewalld と Docker の噛み合わせ、Docker の公式サポートの外であることを考え、慣れを外して中立に比べると Ubuntu の方が見通しがよいので戻した（3）。
+9. **mail のデータ：ブロックボリューム → ブートボリューム**：ブロックボリュームは最小 50GB で、ディスクの枠の残りが 9GB になる。メールにそこまで要らず、あとから移すのも難しくないので、ブートボリュームの `/srv/mail` に置き、枠を 59GB 残した（3）。
+10. **自動更新**：コンテナが勝手に止まるのを避けたい。自動はセキュリティの更新だけにし、再起動と Docker 本体の更新は手で流す1コマンド（`upgrade.yml`）にした（11）。
+11. **作業用の VM**：既存のマイクロ2台（2023年に勉強で作ったもの）は、ブートボリュームのバックアップを取ってから消す。残すものを調べる手間を、必要になったときに先送りできる。作業用の VM は、新しい VCN に作り直す（ops）。

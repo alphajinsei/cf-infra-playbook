@@ -133,12 +133,19 @@
 ## OCI（方式③）
 
 - Always Free の枠（2026-11-03 に公式で確認）：A1（Arm）は計2 OCPU / 12GB（以前の 4 / 24 から減った）で、AMD のマイクロ VM 2台とは別枠。ディスクは**ブートボリュームとブロックボリュームを合わせて 200GB**（ブートは1台 47GB 以上）なので、VM の台数はコアよりディスクで詰まる。PostgreSQL は Always Free にない（無料なのは MySQL HeatWave）。
+- コンソールの「Always Free」のラベルは、シェイプごと無料のもの（E2.1.Micro）にだけ付く。A1 は普通の有料のシェイプで、毎月の使用量のうち 1,500 OCPU 時間・9,000 GB 時間（2 OCPU / 12GB を1か月動かし続ける分）までが無料になる仕組みなので、ラベルは付かない。無料かどうかは Cost Analysis の金額で確かめる。
 - 有料アカウント（Pay As You Go）でも Always Free の枠はそのまま無料で、使用率の低い VM の回収の対象から外れる。そのかわり枠を超えると課金されるので、予算アラートを置く。
 - Flexible LB は L7（HTTP/HTTPS。Host ヘッダーやパスで振り分けられる）、Network Load Balancer は L4。
 - セキュリティ・リストはサブネットにかけるルール、NSG は VM や LB などのリソースにかけるルール。NSG は相手を「どの NSG に属するか」で指定できる。どちらもステートフル。
 - 1つのサブネットのデフォルトの出口は、Internet GW か NAT GW のどちらか一方。外から直接受ける VM（メール）は公開サブネットに置く。Service Gateway は、OCI のサービス（Object Storage、OCIR など）へインターネットを通らずに出る出口。
-- OCI の Ubuntu イメージは、VM の中の iptables で 22 番以外を拒否している。NSG を開けても、VM の中も開けないと届かない。
+- OCI の VM は、NSG に加えて VM の中のファイアウォールも 22 番以外を拒否している（Ubuntu は iptables、Oracle Linux は firewalld）。NSG を開けても、VM の中も開けないと届かない。Docker で公開したポートは、Docker が自分でファイアウォールに穴を足す。
+- SELinux（プロセスがどのファイルやポートに触れてよいか）と firewalld（パケットを通すか）は役割が別で、互いにはぶつからない。引っかかるのは、それぞれが Docker やメールサーバーとぶつかるとき（ボリュームの SELinux のラベル、firewalld の reload で Docker のルールが消える、など）。一度 Oracle Linux 9 にしかけたが、Docker の公式サポートの外でもあり、Ubuntu に戻した。
+- ブロックボリュームは最小 50GB。小さなデータのために付けると、Always Free のディスクの枠（200GB）を大きく食う。
+- OS の自動更新でコンテナが止まる原因は、OS の再起動と Docker 本体の更新の2つ。自動再起動を切り、Docker 本体を自動更新から外し、needrestart にも Docker を再起動させず、Docker の `live-restore`（デーモンが再起動してもコンテナを動かしたままにする）を入れれば、自動更新でコンテナは止まらない。カーネルの更新は、手で再起動するまで効かない。
+- 対策は2段構え。①自動更新では再起動を起こさない（上の設定。夜中にやるのはパッケージの入れ替えだけ）。②それでも再起動したとき（手で流す更新、OCI のメンテナンス、障害）は、Docker が OS の起動時に自動で起動し（`systemctl enable docker`）、`restart: unless-stopped` を付けたコンテナを自動で起動し直す。止まるのは OS が上がるまでの1〜2分だけ。自分で `docker stop` したコンテナだけは止めたままになる。
+- OS を更新しても、コンテナの中身（ベースイメージのライブラリ）は直らない。イメージを作り直して入れ替える。
 - Bastion は、VM の 22 番に最長3時間だけ通れるセッションを作る、OCI の踏み台。VM に公開 IP が要らない。いざというときは、コンソール接続（シリアルコンソール）でネットワークを通らずに入れる。
+- Bastion のセッションの鍵は RSA だけ。ed25519 を渡してもセッションは作れてしまうが、接続で `Permission denied (publickey)` になる。セッションの名前（display name）も英字で始める（数字で始まると InvalidParameter）。
 - OCI が塞いでいるのは外へ出す 25 番だけ。自前のメールサーバーは、受信は 25 番で直接受け、送信は Email Delivery に 587 番で中継すると、申請も IP の評判の問題も避けられる。
 - Cloudflare の DNS でプロキシ（オレンジの雲）を有効にすると、名前解決で返るのは Cloudflare のエッジの IP になる。利用者がつなぐのは Cloudflare で、Cloudflare が改めてオリジン（OCI の LB）につなぎ直す。そのため LB に来るのは Cloudflare の IP だけで、NSG でそこに絞れば、LB の IP を直接たたく迂回を防げる。Origin 証明書はブラウザに信頼されず Cloudflare だけが信頼するので、プロキシを外すと HTTPS も通らなくなる。
 - Cloudflare とオリジンの間の暗号化は、SSL/TLS の暗号化モードで決まる。Flexible は Cloudflare → オリジンが HTTP、Full は HTTPS だが証明書を検証しない、Full (strict) は HTTPS で証明書も検証する。③は Full (strict) で、LB が受けるのは 443番だけ。モードはゾーン全体の設定だが、Workers・Pages はエッジで動くので、①②では関係がなかった。

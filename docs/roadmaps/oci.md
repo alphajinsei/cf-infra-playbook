@@ -208,10 +208,57 @@ gh repo create oci-platform --public --source . --push
 
 ## Step 3：VM と Bastion と Ansible
 
-- [ ] ops（マイクロ）、app（A1 1/8GB）、mail（A1 1/4GB + ブロック 30GB）を Terraform で作る
-- [ ] Bastion と、ラッパーのスクリプト `bin/oci-ssh` を作り、3台に ssh で入る
-- [ ] Ansible で共通の設定を流す（OS の自動更新、iptables、Docker、mail のボリュームのマウント）
-- [ ] コンソール接続（シリアルコンソール）で入れることも確かめておく
+コードは `oci-platform/terraform/compute.tf`（VM 3台、Bastion、ssh の設定の書き出し）、`oci-platform/bin/bastion-proxy`（Bastion のセッションを用意して ssh をつなぐ）、`oci-platform/ansible/`（VM の中の設定）。
+
+- [x] SSH の鍵を2つ作る。VM へのログイン用（ed25519）と、Bastion のセッション用（RSA。Bastion は RSA しか受け付けず、ed25519 だとセッションは作れるが接続で `Permission denied (publickey)` になる）。パスフレーズを付けるなら ssh-agent に入れておく
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/oci-platform -C oci-platform
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/oci-platform-bastion -C oci-platform-bastion
+```
+
+- [x] ops（マイクロ）、app（A1 1/8GB）、mail（A1 1/4GB）と Bastion を作る（コンソールで「Always Free」のラベルが付くのはマイクロだけ。A1 は使用量のうち一定量までが無料になる仕組みなので付かない。翌日、Cost Analysis で A1 の金額が0円かを確かめる）。A1 で `Out of host capacity` が出たら、時間を置いてもう一度 apply する
+
+```bash
+cd ~/claude-sandbox/oci-platform/terraform
+terraform init        # local provider が増えたので
+terraform plan
+terraform apply
+```
+
+- [x] Terraform が書き出した `oci-platform/ssh_config` を、`~/.ssh/config` の先頭から読み込む（Include は Host の行より前に置く）
+
+```bash
+{ echo 'Include ~/claude-sandbox/oci-platform/ssh_config'; echo; cat ~/.ssh/config 2>/dev/null; } > ~/.ssh/config.new
+mv ~/.ssh/config.new ~/.ssh/config && chmod 600 ~/.ssh/config
+```
+
+- [x] 3台に ssh で入る。初回はセッションを作るので1分ほど待つ。2回目からは、3時間以内なら待たない
+
+```bash
+ssh oci-app
+ssh oci-mail
+ssh oci-ops
+oci bastion session list --bastion-id "$(terraform -chdir=$HOME/claude-sandbox/oci-platform/terraform output -raw bastion_id)" \
+  --session-lifecycle-state ACTIVE --query 'data[].{name:"display-name",created:"time-created"}' --output table
+```
+
+- [x] Ansible で VM の中の設定を流す（タイムゾーン、セキュリティの自動更新（自動再起動なし・Docker 本体は対象外）、iptables、app と ops に Docker（`live-restore`）、ops に swap、mail に `/srv/mail`）
+
+```bash
+cd ~/claude-sandbox/oci-platform/ansible
+ansible all -m ping
+ansible-playbook site.yml
+ansible-playbook site.yml     # 2回目は changed=0 になる（何度流しても同じ状態）
+```
+
+- [x] 手で流す更新を一度試す（全部更新し、再起動が要る VM だけ1台ずつ再起動する）
+
+```bash
+ansible-playbook upgrade.yml
+```
+
+- [x] コンソール接続を確かめる：コンソールで ops を開き、Resources → Console connection → Launch Cloud Shell connection。ログインの画面が出れば OK（ubuntu にはパスワードがないので、実際に入るときは別の手順が要る）
 
 理解ポイント：
 
