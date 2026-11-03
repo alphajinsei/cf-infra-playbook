@@ -46,18 +46,28 @@
 
 ①で始めて、あとから API が欲しくなったら、同じ Worker に `main` を足せば②になる。
 
+⓪（Pages + GitHub 連携）は、既存のサイトがそうなっているので一覧に載せているだけで、新しいサービスには使わない。
+
 ### 方式の一覧
 
 方式を足すときは、ここに1行足し、サンプルの README を下の「README の見出し」にそろえて書く。
 
 | 方式 | サンプル（手元 = GitHub = Worker の名前） | 構成 | README |
 | --- | --- | --- | --- |
+| ⓪ 既存・Pages（新規には使わない） | なし（既存の例：`dia-logos`） | Cloudflare Pages + GitHub 連携。main に push すると Cloudflare がリポジトリを取りに行ってビルド・デプロイする | なし（下の「⓪ について」） |
 | ① 標準・静的 | `sample-cf-workers-static` | Astro（SSG）+ Workers Static Assets | [README](https://github.com/alphajinsei/sample-cf-workers-static#readme) |
 | ② 標準・アプリ + DB | `sample-cf-workers-d1` | Workers + Hono + D1 + Drizzle、Access は Terraform | [README](https://github.com/alphajinsei/sample-cf-workers-d1#readme) |
 | ③ 学習方式 | 未作成 | | |
 | ④ 汎用VM | 未作成（OCI の VM と ADB は作成済み） | OCI VM + Docker + PostgreSQL + Cloudflare Tunnel（予定） | |
 
 手元では `~/claude-sandbox/<サンプル名>/README.md`。
+
+#### ⓪ について
+
+- 仕組み：Pages のプロジェクトを GitHub のリポジトリにつなぐと、push のたびに Cloudflare がリポジトリを取りに行き、ダッシュボードに設定したビルドコマンドを実行して配信する。ブランチごとにプレビューの URL もできる。
+- ①②との違い：push ＝ 本番へのリリース。デプロイの設定（ビルドコマンド、出力先、カスタムドメイン）はダッシュボードにあり、リポジトリのファイルには書かれていない。
+- 運用：既存のサイトは、このまま動かしてよい。手元から `wrangler deploy` や `wrangler pages deploy` を混ぜない（デプロイの経路を1つに絞る）。
+- 移すなら：GitHub 連携の Pages は CLI 方式に切り替えられないので、①（Workers Static Assets）に作り直す。①のサンプルの README の5章どおりに作り、Pages のカスタムドメインを外してから `npm run deploy` する。
 
 ## 2. 決まりごと
 
@@ -83,7 +93,7 @@
 
 ### デプロイ
 
-- デプロイは手元の PC から `npm run deploy` の1コマンド。中身は方式ごとに違う（各 README）。
+- デプロイは手元の PC から `npm run deploy` の1コマンド。中身は方式ごとに違う（各 README）。⓪（既存の Pages）だけは push でデプロイされる。
 - git は保管用。push してもデプロイされない。区切りのいいところで push する。
 - デプロイの経路は1つに絞る。GitHub 連携（Workers Builds）や GitHub Actions を同じ Worker に混ぜない（後から出したほうが本番になり、区別がつかない）。
 - ブランチごとのプレビューは使わない。確かめるのは手元の `npm run dev`。

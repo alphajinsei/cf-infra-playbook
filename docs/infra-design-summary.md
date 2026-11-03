@@ -19,10 +19,11 @@
 
 ## 推奨構成と理由
 
-構成は4つの方式に分ける。新しいサービスはまず標準方式で作り、そこで実現できないときだけ他の方式を使う。
+構成は4つの方式に分ける。新しいサービスはまず標準方式で作り、そこで実現できないときだけ他の方式を使う。既存の Pages のサイトは⓪として、そのまま残す。
 
 | 方式 | 構成 | 使う場面 |
 | --- | --- | --- |
+| ⓪ 既存・Pages | Cloudflare Pages + GitHub 連携（push でデプロイ） | 既存のサイト（dia-logos）だけ。新しいサービスには使わない |
 | ① 標準・静的 | Cloudflare Workers Static Assets（コードのない Worker）。Markdown なら Astro でビルド | 静的サイト、SPA |
 | ② 標準・アプリ + DB | Cloudflare Workers + D1（必要に応じて R2 / Access / Cron）。TypeScript + Hono + Drizzle | DBを使うアプリ全般。既定の選択肢 |
 | ③ 学習方式 | AWS Lambda + DynamoDB、GCP Cloud Run + Firestore、Azure Functions + Azure SQL など | 大手クラウドを触る目的で、1サービスずつ試す |
