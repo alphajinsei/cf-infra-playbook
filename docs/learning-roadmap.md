@@ -8,7 +8,7 @@
 
 - 公開先：`sample-cf-workers-d1.alphajinsei.com`
 - アプリ：メモの一覧・追加・削除ができる画面と API
-- 技術：TypeScript + Hono + D1（後半で Drizzle）、デプロイは wrangler → GitHub 連携、構成管理は Terraform
+- 技術：TypeScript + Hono + D1（後半で Drizzle）、デプロイは wrangler（GitHub Actions での push デプロイも試した）、構成管理は Terraform
 
 ## 進め方
 
@@ -28,9 +28,9 @@
 | 3 | 画面と API を作る | 1〜2時間 | Static Assets と Hono のルーティング |
 | 4 | D1 でデータを保存する | 2時間 | バインディング、マイグレーション、local/remote |
 | 5 | Drizzle を導入する | 1時間 | ORM とスキーマ管理 |
-| 6 | git push で自動デプロイ | 1時間 | Workers Builds と CI/CD |
+| 6 | デプロイの方式を決める | 1〜2時間 | GitHub 連携、GitHub Actions、CI/CD |
 | 7 | Terraform で Access を管理 | 2〜3時間 | IaC、state、wrangler との役割分担 |
-| 8 | 運用の仕組みを足す | 1時間 | ログ、監視、バックアップ、定期実行 |
+| 8 | 運用の仕組みを足す（見送り） | - | ログ、監視、バックアップ、定期実行 |
 | 9 | 振り返りとテンプレート化 | Claude と | 次のサービスに展開する形にする |
 
 ---
@@ -224,7 +224,7 @@ npx wrangler d1 migrations apply DB --local
 npx wrangler d1 execute DB --local --command "SELECT * FROM memos"   # ローカルの中身を見る
 ```
 - [x] `npx wrangler d1 migrations apply DB --remote` で本番に適用し、デプロイする
-- [ ] `npx wrangler d1 execute DB --remote --command "SELECT * FROM memos"` で中身を見る
+- [x] `npx wrangler d1 execute DB --remote --command "SELECT * FROM memos"` で中身を見る
 
 理解ポイント：
 
@@ -238,36 +238,66 @@ npx wrangler d1 execute DB --local --command "SELECT * FROM memos"   # ローカ
 
 やること：
 
-- [ ] `npm install drizzle-orm` と `npm install -D drizzle-kit`
-- [ ] `src/db/schema.ts` に memos テーブルを TypeScript で定義する
-- [ ] `drizzle.config.ts` を作り、出力先を wrangler のマイグレーションディレクトリに合わせる（`wrangler.jsonc` の `migrations_dir` と一致させる）
-- [ ] 列を1つ追加（例：`updated_at`）し、`npx drizzle-kit generate` で SQL が生成されることを確認する
-- [ ] 生 SQL のクエリを Drizzle に置き換える
+- [x] `npm install drizzle-orm` と `npm install -D drizzle-kit`
+- [x] `src/db/schema.ts` に memos テーブルを TypeScript で定義する
+- [x] `drizzle.config.ts` を作り、出力先を wrangler のマイグレーションディレクトリに合わせる（`wrangler.jsonc` の `migrations_dir` と一致させる）
+- [x] 手書きの `0001_create_memos.sql` を捨てて、Drizzle に最初から作らせる（テストデータしかないので DB を作り直す。理由は [番外編：DB のスキーマ管理](extra-db-schema-management.md) の「ベースライン」）
+
+```bash
+rm migrations/0001_create_memos.sql
+npx drizzle-kit generate                   # migrations/0000_xxx.sql と migrations/meta/ ができる
+rm -rf .wrangler/state/v3/d1               # ローカルの DB を消す
+npx wrangler d1 migrations apply DB --local
+npx wrangler d1 execute DB --remote --command "DROP TABLE memos; DROP TABLE d1_migrations;"   # 本番の DB を空にする
+npx wrangler d1 migrations apply DB --remote
+```
+
+- [x] 列を1つ追加（例：`updated_at`）し、`npx drizzle-kit generate` で SQL が生成されることを確認する
+- [x] 生 SQL のクエリを Drizzle に置き換える
 
 理解ポイント：
 
 - Step 4 の生 SQL と比べて、何が楽になり何が隠れたか。
 - スキーマの「正」は schema.ts と migrations/*.sql のどちらか。
 
-参考：[Drizzle with Cloudflare D1](https://orm.drizzle.team/docs/connect-cloudflare-d1)
+参考：[Drizzle with Cloudflare D1](https://orm.drizzle.team/docs/connect-cloudflare-d1)、[番外編：DB のスキーマ管理](extra-db-schema-management.md)
 
-## Step 6：git push で自動デプロイ
+## Step 6：デプロイの方式を決める（GitHub と CI/CD）
+
+GitHub Actions で「main への push ＝ デプロイ」を作って試したうえで、アプリは手元の `npm run deploy` でデプロイし、git は保管用に適宜 push する方式にした。経緯は [方式検討サマリの「CI/CD」](infra-design-summary.md#cicd) を参照。
 
 やること：
 
-- [ ] `.gitignore` に `node_modules/`、`.wrangler/`、`.dev.vars` が入っていることを確認する
-- [ ] `gh repo create sample-cf-workers-d1 --private --source . --push` で GitHub にリポジトリを作る
-- [ ] ダッシュボードの Worker の Settings → Builds で GitHub リポジトリを接続する
-- [ ] 画面の文言を変えて push し、自動でデプロイされることを確認する
-- [ ] ブランチを切って push し、プレビュー URL が発行されることを確認する
+- [x] `.gitignore` に `node_modules/`、`.wrangler/`、`.dev.vars` が入っていることを確認する
+- [x] `gh repo create sample-cf-workers-d1 --private --source . --push` で GitHub にリポジトリを作る
+- [x] （試行）ダッシュボード（My Profile → API Tokens → Create Token）で、テンプレート「Edit Cloudflare Workers」に D1 の編集権限を足した API トークンを作る。手元では `infra/.secrets/cloudflare.env`（git 管理外）に控える
+- [x] （試行）トークンとアカウント ID を、リポジトリの Secrets に登録する（`gh secret set CLOUDFLARE_API_TOKEN`、`gh secret set CLOUDFLARE_ACCOUNT_ID --body "<アカウント ID>"`）
+- [x] （試行）`.github/workflows/deploy.yml` を書き、push で Actions が動いて本番に反映されることを確認する（`gh run watch`、`npx wrangler deployments list`）
+- [x] （試行）`schema.ts` に列を足して `npx drizzle-kit generate` → push し、マイグレーションも Actions で本番に適用されることを確認する
+- [x] 方針転換の後片付け：ワークフローを消す（GitHub の Secrets は、静的サイトなどで使うかもしれないので残した）
+
+```bash
+cd ~/claude-sandbox/sample-cf-workers-d1
+git rm .github/workflows/deploy.yml
+gh secret delete CLOUDFLARE_API_TOKEN
+gh secret delete CLOUDFLARE_ACCOUNT_ID
+```
+
+- [x] `package.json` の `deploy` スクリプトを、マイグレーションの適用とデプロイをまとめたものに書き換え、`npm run deploy` でデプロイする
+
+```json
+"deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy"
+```
+
+- （任意）デプロイの履歴にそのときのコミットを残したければ、`wrangler deploy` に `--message "$(git describe --always --dirty)"` を付ける（コミット前の変更を含むと `-dirty` が付く）。今回はシンプルさを優先して付けていない
 
 理解ポイント：
 
-- ビルドはどこで実行され、どの権限でデプロイしているか。
-- DB マイグレーションの適用はこの流れに含まれていない。どうするのがよいか（手動、ビルドコマンドに含める、GitHub Actions に分ける）。
-- 代案の GitHub Actions + `cloudflare/wrangler-action` と比べた利点と欠点。
+- Cloudflare から見て、手元の `wrangler deploy` と Actions からのデプロイは何が違い、何が同じか。混ぜると何が困るか。
+- Workers Builds（Cloudflare が GitHub から取りに行く）と GitHub Actions（GitHub が Cloudflare に送り込む）では、認証情報をどちらに預けているか。
+- アプリでは push デプロイをやめ、静的サイトでは使うことにした理由。
 
-参考：[Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/)
+参考：[GitHub Actions でデプロイする（Cloudflare）](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/)、[Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/)
 
 ## Step 7：Terraform で Access を管理
 
@@ -275,12 +305,40 @@ npx wrangler d1 execute DB --local --command "SELECT * FROM memos"   # ローカ
 
 やること：
 
-- [ ] ダッシュボードで Terraform 用の API トークンを作る（Access の編集と Zone の読み取りなど、必要最小限の権限）
-- [ ] state 置き場として R2 バケット（例：`tfstate`）を手動で作り、R2 用の API トークンを発行する
-- [ ] `sample-cf-workers-d1/infra/terraform/` に provider と backend を書く（backend は s3 互換設定で R2 を指す）
-- [ ] `terraform init` → `terraform plan` → `terraform apply`
-- [ ] `/admin` にアクセスし、ログインを求められることを確認する
-- [ ] ダッシュボードで設定を手で変えてから `terraform plan` を実行し、差分（drift）が検出されることを確認する
+- [x] ダッシュボードで Terraform 用の API トークンを作る（Account / Access: Apps and Policies / Edit など、必要最小限の権限）。`infra/.secrets/terraform-cloudflare.env` に控える
+- [x] state 置き場として R2 バケット（例：`tfstate`）を手動で作り、R2 用の API トークンを発行する
+
+```bash
+# ダッシュボードで R2 を有効にした（支払い方法を登録した）あとで
+npx wrangler r2 bucket create tfstate --location apac
+npx wrangler r2 bucket list
+```
+
+R2 用の API トークン（S3 互換の Access Key ID と Secret Access Key）は、ダッシュボードの R2 →「Manage API tokens」で、`tfstate` バケットだけに「Object Read & Write」を付けて作る。手元では `infra/.secrets/` に控える。
+- [x] `sample-cf-workers-d1/infra/terraform/` に provider と backend を書く（backend は s3 互換設定で R2 を指す）
+- [x] 鍵を読み込んで terraform を実行するラッパー `tf.sh` を置き（ターミナルに `CLOUDFLARE_API_TOKEN` を残さないため。残すと wrangler がそれを優先して使い、`npm run deploy` が失敗する）、`.gitignore` に `.terraform/`、`*.tfstate`、`*.tfstate.*` を足す
+- [x] `./tf.sh init` → `./tf.sh validate` → `./tf.sh plan` → `./tf.sh apply`
+
+```bash
+cd ~/claude-sandbox/sample-cf-workers-d1/infra/terraform
+./tf.sh init
+./tf.sh validate
+./tf.sh plan
+./tf.sh apply
+```
+- [x] `/admin` にアクセスし、ログインを求められることを確認する（ログイン後は、`/admin` のページがないので 404 になる）。`/` や `/api/memos` はログインなしのまま。state が R2 の `tfstate` バケットにできていることも確認する
+
+```bash
+curl -sI https://sample-cf-workers-d1.alphajinsei.com/admin | head -3      # 302 で cloudflareaccess.com へ
+curl -sI https://sample-cf-workers-d1.alphajinsei.com/api/memos | head -1  # 200 のまま
+```
+- [x] ダッシュボードで設定を手で変えてから `terraform plan` を実行し、差分（drift）が検出されることを確認する
+
+```bash
+./tf.sh plan                 # 「~ update in-place」として手の変更が出る
+./tf.sh apply                # コードの状態に戻す（コードを正とする場合）
+./tf.sh plan -refresh-only    # 「Terraform の外で変更されたもの」だけを見る（drift の確認用）
+```
 
 理解ポイント：
 
@@ -289,9 +347,11 @@ npx wrangler d1 execute DB --local --command "SELECT * FROM memos"   # ローカ
 - wrangler と Terraform の役割分担：同じリソースを両方から管理すると何が起きるか。このプロジェクトでは「Worker・D1・カスタムドメインは wrangler、Access などは Terraform」とする。
 - トークンや秘密情報をリポジトリに入れない方法（環境変数、`terraform.tfvars` を `.gitignore` に入れる）。
 
-参考：[Cloudflare Terraform provider](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs)、[Cloudflare と Terraform](https://developers.cloudflare.com/terraform/)
+参考：[Cloudflare Terraform provider](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs)、[Cloudflare と Terraform](https://developers.cloudflare.com/terraform/)、[番外編：Terraform の state と、置き場所](extra-terraform-state.md)
 
-## Step 8：運用の仕組みを足す
+## Step 8：運用の仕組みを足す（見送り）
+
+個人サイトには過剰なので見送った。ログ（`observability`）はひな形で最初から有効になっている。必要になったら、以下を個別に足す。
 
 やること：
 
@@ -307,7 +367,19 @@ npx wrangler d1 execute DB --local --command "SELECT * FROM memos"   # ローカ
 
 ## Step 9：振り返りとテンプレート化（Claude と一緒に）
 
-- [ ] 各ステップでつまずいた点と、理解ポイントへの答えを `docs/` にメモする
+- [x] 各ステップでつまずいた点と、理解ポイントへの答えを `docs/` にメモする（[勉強メモ](study-notes.md) と番外編で済んだ）
+- [x] 枠①（静的サイト）のサンプル `sample-cf-workers-static` を作る（Claude が作成。Astro + Workers Static Assets、デプロイは `npm run deploy`）。公開先は https://sample-cf-workers-static.alphajinsei.com
+
+```bash
+cd ~/claude-sandbox
+npm create astro@latest sample-cf-workers-static -- --template minimal --install --git --yes --skip-houston
+cd sample-cf-workers-static
+npm install -D wrangler
+# wrangler.jsonc（assets だけ・カスタムドメイン・workers_dev: false）と、
+# package.json の "deploy": "astro build && wrangler deploy" を書く
+npm run deploy
+gh repo create sample-cf-workers-static --private --source . --push
+```
 - [ ] Claude と一緒に、サービス用テンプレート（ディレクトリ構成、`wrangler.jsonc`、Terraform、CI）を作る
 - [ ] サービス開発側に渡すインフラ設計資料をまとめる
 - [ ] 以降のサービスのデプロイは Claude に任せる

@@ -1,6 +1,6 @@
 # 個人サービス公開インフラ 方式検討サマリ
 
-最終更新：2026-11-01
+最終更新：2026-11-03
 
 個人サービスは Cloudflare（Workers + D1 ほか）を標準基盤とし、1サービス＝1ディレクトリでアプリからインフラまで完結させる。
 
@@ -9,7 +9,7 @@
 | # | 要件 | 優先度 | 内容 |
 | --- | --- | --- | --- |
 | R1 | 定常コストゼロ | 必須 | 常時動かすものは無料枠で運用する。学習のための一時的な課金は可 |
-| R2 | 手軽なデプロイ | 必須 | git push でデプロイされる。サービスを今後いくつも追加できる |
+| R2 | 手軽なデプロイ | 必須 | 面倒な手順なしにデプロイ・更新できる（`npm run deploy` の1コマンド）。サービスを今後いくつも追加でき、立ち上げを CLI で完結できる |
 | R3 | プロジェクト内完結 | 強く希望 | 1つのディレクトリにアプリとインフラのコードが揃い、サービスを全レイヤ分そこで説明しきれる |
 | R4 | 構成管理 | できれば | Terraform / Ansible でコード化する（学習も兼ねる） |
 | R5 | 対象構成 | 必須 | (a) 静的コンテンツ配信のみ、(b) アプリケーションサーバ + DB |
@@ -23,7 +23,7 @@
 
 | 枠 | 構成 | 使う場面 |
 | --- | --- | --- |
-| ① 標準・静的 | Cloudflare Workers Static Assets（または Pages）+ GitHub連携 | 静的サイト、SPA |
+| ① 標準・静的 | Cloudflare Workers Static Assets（コードのない Worker）。Markdown なら Astro でビルド | 静的サイト、SPA |
 | ② 標準・アプリ + DB | Cloudflare Workers + D1（必要に応じて R2 / Access / Cron）。TypeScript + Hono + Drizzle | DBを使うアプリ全般。既定の選択肢 |
 | ③ 学習枠 | AWS Lambda + DynamoDB、GCP Cloud Run + Firestore、Azure Functions + Azure SQL など | 大手クラウドを触る目的で、1サービスずつ試す |
 | ④ 汎用VM枠 | OCI Always Free VM + Docker + Dokploy/Coolify + Cloudflare Tunnel | Workersで動かないもの（常駐プロセス、任意の言語、PostgreSQLが必須なもの） |
@@ -31,7 +31,7 @@
 標準を Cloudflare にする理由：
 
 - R1 コスト：無料プランに請求が発生しない。上限を超えると止まるだけで、AWS等のような課金事故が起きない。
-- R2 デプロイ：Pagesと同じ git push デプロイが Workers でも使える（Workers Builds）。サービス追加はリポジトリを増やすだけ。
+- R2 デプロイ：wrangler の CLI だけでデプロイできる（GitHub Actions などから呼べば git push でのデプロイにもできる）。サービス追加はリポジトリを増やすだけ（詳細は「CI/CD」）。
 - R3 完結性：共通基盤がアカウントとDNSゾーンだけで、他はすべてサービスの `wrangler.jsonc` と Terraform に書ける。
 - R4 構成管理：Terraform の Cloudflare provider で DNS・Access・R2・D1 を管理できる。
 - 既存資産：DNS・Pages・Access をすでに運用しており、管理画面も運用の流れも増えない。
@@ -49,11 +49,11 @@ flowchart LR
     worker -- "バインディング" --> r2["R2<br/>ファイル"]
     worker -- "バインディング" --> kv["KV<br/>設定・キャッシュ"]
   end
-  github["GitHub<br/>サービスのリポジトリ"] -- "push で自動デプロイ" --> worker
+  dev["開発者の PC<br/>wrangler"] -- "npm run deploy" --> worker
   style access stroke-dasharray: 5 5
 ```
 
-リクエストは DNS/CDN と（必要なら）Access を通って Worker に届き、Worker はバインディングで D1・R2・KV を使う。デプロイは GitHub への push だけで行われる。
+リクエストは DNS/CDN と（必要なら）Access を通って Worker に届き、Worker はバインディングで D1・R2・KV を使う。アプリのデプロイは、手元の PC から wrangler で行う（GitHub はコードの保管場所）。
 
 ## 検討した選択肢
 
@@ -89,7 +89,7 @@ my-service/
 ├── migrations/          # D1 のスキーマ（SQL）
 ├── wrangler.jsonc       # Worker定義：D1/R2/Cron の紐付け、カスタムドメイン
 ├── infra/terraform/     # Access など wrangler で扱えないもの
-└── .github/workflows/   # CI/CD
+└── .github/workflows/   # push でデプロイしたくなった場合のみ（いまは置かない）
 ```
 
 ### アプリとDBの間の通信
@@ -103,6 +103,71 @@ my-service/
 - Docker は冗長化のためではなく、依存関係の分離（1台のVMで複数サービスのミドルウェアが衝突しない）、再現性、`Dockerfile` でサービスのディレクトリ内に完結させるために使う。
 - 冗長化はしない。VM 1台が単一障害点になることを受け入れ、Terraform + Ansible で「作り直せば元に戻る」状態を保つ。
 - DB は日次で R2 にバックアップする。目標は RTO 数時間、RPO 1日。
+
+## CI/CD
+
+インフラの構成（どこで動かすか）を決めたあと、学習ロードマップの Step 6 で「どうデプロイするか」を検討した。結論は、**アプリ（枠②）も静的サイト（枠①）も、手元の PC から `npm run deploy` でデプロイし、git は保管用に適宜 push する**。`deploy` スクリプトの中身だけが違う（アプリはマイグレーション＋`wrangler deploy`、静的サイトは `astro build`＋`wrangler deploy`）。
+
+一度は「GitHub Actions で main への push をデプロイにする」と決めて、サンプルで実際に動かした。そのうえで、使ってみた感触から手元のデプロイに戻した。
+
+### 経緯
+
+1. 静的サイト（dia-logos の Pages）と同じく、git push でデプロイする前提で考え始めた。
+2. 方式を3つ比べ（下の表）、立ち上げを CLI で完結でき（Claude が代わりにできる）、デプロイ忘れも起きない GitHub Actions を採用した。サンプルでは、コードのデプロイも、列の追加のマイグレーションも Actions で本番に流れた。
+3. 使ってみると、push が「本番に出す」操作になり、push の重みが増した。失敗するかもしれない変更は push できなくなり、開発中に考えることが増えた。個人開発で、git と本番の一致までの統制は求めていない。git はコードをインターネット上に保管しておく場所で十分。
+4. そこで、アプリは「`wrangler dev` で確かめて `wrangler deploy` で出す。git は適宜 push」に変更した。
+5. 静的サイトは、当初「失敗しようがないので push デプロイの便利さを取る」つもりだった。しかし既存のサイト（blog など）は Markdown を SSG（Astro）でビルドする形で、ビルドの工程がある。方式をアプリとそろえるほうが素直なので、静的サイトも `npm run deploy`（手元でビルドしてデプロイ）にした。手元でビルドすれば、`astro dev` で見ていたものと同じ成果物がそのまま出る。
+
+### 検討した案
+
+| 観点 | A. Workers Builds（GitHub 連携） | B. 手元の wrangler | C. GitHub Actions |
+| --- | --- | --- | --- |
+| 仕組み | Cloudflare が GitHub App 経由で push を受け取り、リポジトリを取りに行ってビルド・デプロイする | 手元の PC で `wrangler deploy` を実行する | push のたびに GitHub が使い捨ての Ubuntu を用意し、手元と同じ wrangler のコマンドを実行する |
+| push の意味 | 本番へのリリース | コードの保管 | 本番へのリリース |
+| 既存方式（dia-logos の Pages）との整合性 | ◎ 同じ方式 | △ push とデプロイが別の操作になる | ○ 体験は同じ（push ＝ デプロイ）、仕組みが違う |
+| 初期設定の手間（サービスごと） | △ ダッシュボードでリポジトリの接続が要り、Claude が代わりにできない | ◎ ほぼゼロ | ○ ワークフローはテンプレートに入れておける。シークレットの登録は `gh secret set` で CLI からできる |
+| 改修のときの取り回し | ○ push するだけだが、push の重みが増す | ◎ 確かめて、出したいときに出す。ただしログイン済みの PC からしかできない | ○ A と同じ |
+| 本番 ＝ git の main が保証されるか | ◎ | △ 保証されない（個人開発なので受け入れる） | ◎ |
+| 認証 | Cloudflare が管理（GitHub App とビルド用トークンを自動作成） | 手元の `wrangler login` | Cloudflare の API トークンを GitHub の Secrets に預ける |
+| DB マイグレーション | Deploy command に含めればできる | デプロイのスクリプトに含める | ワークフローに含める |
+
+- A と C は矢印の向きが逆。A は Cloudflare が GitHub から取りに行き（GitHub へのアクセス権を Cloudflare に渡す）、C は GitHub が Cloudflare に送り込む（Cloudflare の API トークンを GitHub に預ける）。
+- B も CLI だけで完結するので、「Claude が代わりにできる」という点は満たしている。
+
+### 採用した構成（アプリ：枠②）
+
+- 開発は `npx wrangler dev`（ローカルの D1）で確かめ、本番へは `npm run deploy` で出す。`package.json` の `deploy` スクリプトに、マイグレーションの適用とデプロイをまとめ、マイグレーションの流し忘れを防ぐ。デプロイの履歴にコミットを残したい場合は、`wrangler deploy` に `--message "$(git describe --always --dirty)"` を付ける（サンプルではシンプルさを優先して付けていない）。
+
+```json
+"deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy"
+```
+
+- git は適宜 push する。push はデプロイと関係しない。
+- GitHub Actions のワークフローと、GitHub の Secrets は置かない。
+
+### 運用のルール
+
+- デプロイの経路は1つに絞る。同じ Worker に、手元の `wrangler deploy` と Workers Builds や Actions からのデプロイを混ぜると、後から出したほうが本番になり、本番の中身がどこ由来か分からなくなる（Cloudflare から見るとどれも同じ API 呼び出しで、区別がつかない）。
+- `drizzle-kit generate` は手元で実行し、生成された SQL を読んでから `npm run deploy` する。
+- ブランチごとのプレビューは使わない。確かめるのは `wrangler dev` で行う。プレビューを使うと本番と同じ D1 につながり、本番のデータに触れてしまう。
+
+### 静的サイト（枠①）と既存の Pages
+
+| | アプリ（枠②） | 静的サイト（枠①、SSG） |
+| --- | --- | --- |
+| 手元で確かめる | `npx wrangler dev` | `npm run dev`（`astro dev`）。本番と同じ workerd で見るなら `npm run preview` |
+| `npm run deploy` の中身 | `wrangler d1 migrations apply DB --remote && wrangler deploy` | `astro build && wrangler deploy` |
+| `wrangler.jsonc` | `main` ＋ `assets` ＋ `d1_databases` | `assets`（`./dist`）だけ。`main` はない |
+| サンプル | `sample-cf-workers-d1` | `sample-cf-workers-static` |
+
+- 静的サイトは Pages ではなく Workers Static Assets にする。静的ファイルの配信に限れば機能はほぼ同じだが、Cloudflare は新機能を Workers 側に入れていて、新しく作るなら Workers を勧めている。あとで API（問い合わせフォームなど）を足したくなったら、同じ Worker に `main` を足すだけで済む。Pages にしかない実行環境はない（Pages Functions も中身は workerd）。
+- 完全な静的サイトなら、Astro の Cloudflare アダプターは要らない。`astro build` の出力（`dist/`）を `assets` で配るだけ。`build.format: 'file'` にすると `posts/hello.html` の形で出力され、`/posts/hello` にリダイレクトなしで応答する。
+- 記事の公開が「この PC から `npm run deploy`」になり、スマホや GitHub の画面から書いて公開することはできない。必要になったら GitHub Actions を足す（下の参考の構成から、D1 の行をビルドの行に替える）。
+- 既存の Pages（dia-logos）は、現状の GitHub 連携のまま運用する。Pages も `wrangler pages deploy` で CLI からデプロイできるが、GitHub 連携で作った Pages のプロジェクトは CLI 方式（Direct Upload）に切り替えられず、作り直しになる。乗り換えるなら Workers Static Assets（枠①）に移すのが自然。
+
+### 試した GitHub Actions の構成（参考）
+
+`.github/workflows/deploy.yml` で、main への push（と手動実行）を合図に、`actions/checkout` → `actions/setup-node`（Node 24）→ `npm ci` → `wrangler d1 migrations apply DB --remote` → `wrangler deploy --message "${{ github.sha }}"` を実行した。認証は、Cloudflare の API トークン（テンプレート「Edit Cloudflare Workers」+ D1 の編集）を Secrets の `CLOUDFLARE_API_TOKEN` に、アカウント ID を `CLOUDFLARE_ACCOUNT_ID` に入れた。1回のデプロイは 30〜40 秒程度。静的サイトで Actions を使う場合は、D1 の行を `npm run build` に替えればよい。
 
 ## 登場サービスの解説
 
@@ -170,5 +235,6 @@ Cloudflare は「世界中のCDN拠点（エッジ）」の上に、実行環境
 
 - [ ] 標準枠（Workers + D1）でサンプルアプリを作り、サブドメインにデプロイする（[学習ロードマップ](learning-roadmap.md)）
 - [ ] Terraform state 用の R2 バケットと API トークンを用意する
+- [x] 枠①（静的サイト）のサンプル（`sample-cf-workers-static`）を作り、デプロイ方法を決める（アプリと同じ `npm run deploy`）
 - [ ] サンプルをもとに、サービス開発側が使うインフラ設計資料（テンプレートと手順）を作る
 - [ ] 無料枠の数値を各社の公式ページで確認する

@@ -14,11 +14,14 @@
 ```
 ~/claude-sandbox/
 ├── infra/                  このリポジトリ（方針・ロードマップ・番外編）
+│   └── .secrets/           API トークンなどの置き場。git 管理外（.gitignore）
 └── sample-<基盤>-<構成>/   方式ごとのサンプルアプリ。それぞれ独立した git リポジトリ
-    例：sample-cf-workers-d1（ロードマップのサンプル）
+    例：sample-cf-workers-d1（枠②：アプリ + D1。ロードマップのサンプル）
+        sample-cf-workers-static（枠①：Astro の静的サイト）
 ```
 
-- フォルダ名＝GitHub のリポジトリ名＝Worker の名前。小文字とハイフンのみ。
+- infra は GitHub では `alphajinsei/cf-infra-playbook`（公開）。手元のフォルダ名は infra のまま。公開リポジトリなので、秘密情報や個人のメールアドレスを書かない。コミットの作者は noreply アドレス（リポジトリ単位で `git config user.email` に設定済み）。
+- サンプルは、フォルダ名＝GitHub のリポジトリ名＝Worker の名前。小文字とハイフンのみ。
 - 作業の拠点は infra。サンプルのフォルダは `.claude/settings.json` の `additionalDirectories` に登録して、このセッションから読み書きする。サンプルを増やしたらここにも追記する。
 - 開発環境は WSL2（Ubuntu）。Node.js は nvm で入れた LTS（24）。
 
@@ -28,4 +31,5 @@
 - 新しく説明したことや、ユーザーが理解したことは、そのつど勉強メモの該当する節に追記する（ユーザーの依頼で始めたので、追記のたびに確認は取らなくてよい）。
 - ユーザーに実行してもらうコマンドがロードマップにまだ書かれていなければ、該当する Step に追記する。終わった項目はチェックを付ける。
 - ファイルの作成・変更・コピーなど、手元の状態が変わる作業は、実行する前に確認を取る。
+- `.secrets/` の中身は読まない・表示しない（`.claude/settings.json` で Read を禁止している。Bash の cat なども使わない）。トークンが必要な作業は、ユーザーに `source` してもらうか、ユーザー自身に実行してもらう。
 - Claude が使う Bash は非対話シェルで nvm が読み込まれず、`npx` や `npm` が Windows 側（`/mnt/c/...`）に解決される。Node.js のコマンドを Claude が実行するときは `bash -ic '...'` のように対話シェルで実行する。

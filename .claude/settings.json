@@ -1,7 +1,11 @@
 {
   "permissions": {
     "additionalDirectories": [
-      "/home/alphajinsei/claude-sandbox/sample-cf-workers-d1"
+      "/home/alphajinsei/claude-sandbox/sample-cf-workers-d1",
+      "/home/alphajinsei/claude-sandbox/sample-cf-workers-static"
+    ],
+    "deny": [
+      "Read(~/claude-sandbox/infra/.secrets/**)"
     ]
   }
 }
