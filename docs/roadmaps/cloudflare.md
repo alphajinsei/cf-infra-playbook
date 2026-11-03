@@ -14,7 +14,7 @@
 
 - 各ステップの「理解ポイント」に自分の言葉で答えられたら完了とする。
 - 詰まったら、エラー全文と実行したコマンドを Claude に渡す。
-- 途中で分かったことは [勉強メモ](study-notes.md) に積み上げる。
+- 途中で分かったことは [勉強メモ](../notes/study-notes.md) に積み上げる。
 - 開発環境：WSL2（Ubuntu）。
 - ディレクトリ構成：サンプルアプリは方式ごとに `~/claude-sandbox/sample-<基盤>-<構成>/` として infra の隣に作り、それぞれ独立した git リポジトリにする（フォルダ名＝GitHub のリポジトリ名＝Worker の名前。小文字とハイフンのみ）。このロードマップのサンプルは `sample-cf-workers-d1`。
 - 作業の拠点は infra：VSCode は infra を開き、サンプルのフォルダを「フォルダーをワークスペースに追加」で並べる。Claude Code も infra で開き、サンプルのフォルダは `.claude/settings.json` の `additionalDirectories` に登録する（サンプルを増やしたら追記する）。
@@ -55,7 +55,7 @@ sudo apt install -y git curl unzip rsync build-essential
 
 ### 0-2. CLI の導入
 
-- [x] Node.js：nvm（バージョン管理ツール）で LTS の 24 を入れる。用語は [番外編：Node.js まわりの用語](extra-nodejs-basics.md) を参照
+- [x] Node.js：nvm（バージョン管理ツール）で LTS の 24 を入れる。用語は [番外編：Node.js まわりの用語](../notes/extra-nodejs-basics.md) を参照
 
 ```bash
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.8/install.sh | bash
@@ -89,7 +89,7 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashi
 sudo apt update && sudo apt install -y terraform
 ```
 
-補足：どちらも「署名鍵を置く → 配布元（apt リポジトリ）を登録する → apt で入れる」という同じ流れ。Ubuntu 標準の apt には入っていないか古いので、配布元を追加する。以後は `sudo apt upgrade` で一緒に更新される。仕組みは [番外編：apt の署名鍵と GPG](extra-apt-signing.md) を参照。
+補足：どちらも「署名鍵を置く → 配布元（apt リポジトリ）を登録する → apt で入れる」という同じ流れ。Ubuntu 標準の apt には入っていないか古いので、配布元を追加する。以後は `sudo apt upgrade` で一緒に更新される。仕組みは [番外編：apt の署名鍵と GPG](../notes/extra-apt-signing.md) を参照。
 - [x] `node -v`、`gh --version`、`terraform -version` がすべて通ることを確認する
 
 補足：wrangler はグローバルに入れず、プロジェクトごとに `npm install -D wrangler` してバージョンを固定する（`npx wrangler ...` で呼ぶ）。
@@ -148,7 +148,7 @@ cp -r /mnt/c/Users/peinn/.claude/skills/about-me /mnt/c/Users/peinn/.claude/skil
 - `wrangler dev` で動いているのは何か（ローカルの workerd という実行環境）。
 - Worker には「起動しっぱなしのサーバ」がない。では、リクエストが来たときに何が起きているか。
 
-参考：[Workers Get started](https://developers.cloudflare.com/workers/get-started/guide/)、[番外編：Workers の実行環境](extra-workers-runtime.md)
+参考：[Workers Get started](https://developers.cloudflare.com/workers/get-started/guide/)、[番外編：Workers の実行環境](../notes/extra-workers-runtime.md)
 
 ## Step 2：カスタムドメインで公開
 
@@ -241,7 +241,7 @@ npx wrangler d1 execute DB --local --command "SELECT * FROM memos"   # ローカ
 - [x] `npm install drizzle-orm` と `npm install -D drizzle-kit`
 - [x] `src/db/schema.ts` に memos テーブルを TypeScript で定義する
 - [x] `drizzle.config.ts` を作り、出力先を wrangler のマイグレーションディレクトリに合わせる（`wrangler.jsonc` の `migrations_dir` と一致させる）
-- [x] 手書きの `0001_create_memos.sql` を捨てて、Drizzle に最初から作らせる（テストデータしかないので DB を作り直す。理由は [番外編：DB のスキーマ管理](extra-db-schema-management.md) の「ベースライン」）
+- [x] 手書きの `0001_create_memos.sql` を捨てて、Drizzle に最初から作らせる（テストデータしかないので DB を作り直す。理由は [番外編：DB のスキーマ管理](../notes/extra-db-schema-management.md) の「ベースライン」）
 
 ```bash
 rm migrations/0001_create_memos.sql
@@ -260,11 +260,11 @@ npx wrangler d1 migrations apply DB --remote
 - Step 4 の生 SQL と比べて、何が楽になり何が隠れたか。
 - スキーマの「正」は schema.ts と migrations/*.sql のどちらか。
 
-参考：[Drizzle with Cloudflare D1](https://orm.drizzle.team/docs/connect-cloudflare-d1)、[番外編：DB のスキーマ管理](extra-db-schema-management.md)
+参考：[Drizzle with Cloudflare D1](https://orm.drizzle.team/docs/connect-cloudflare-d1)、[番外編：DB のスキーマ管理](../notes/extra-db-schema-management.md)
 
 ## Step 6：デプロイの方式を決める（GitHub と CI/CD）
 
-GitHub Actions で「main への push ＝ デプロイ」を作って試したうえで、アプリは手元の `npm run deploy` でデプロイし、git は保管用に適宜 push する方式にした。経緯は [方式検討サマリの「CI/CD」](infra-design-summary.md#cicd) を参照。
+GitHub Actions で「main への push ＝ デプロイ」を作って試したうえで、アプリは手元の `npm run deploy` でデプロイし、git は保管用に適宜 push する方式にした。経緯は [方式検討サマリの「CI/CD」](../design/cloudflare.md#cicd) を参照。
 
 やること：
 
@@ -347,7 +347,7 @@ curl -sI https://sample-cf-workers-d1.alphajinsei.com/api/memos | head -1  # 200
 - wrangler と Terraform の役割分担：同じリソースを両方から管理すると何が起きるか。このプロジェクトでは「Worker・D1・カスタムドメインは wrangler、Access などは Terraform」とする。
 - トークンや秘密情報をリポジトリに入れない方法（環境変数、`terraform.tfvars` を `.gitignore` に入れる）。
 
-参考：[Cloudflare Terraform provider](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs)、[Cloudflare と Terraform](https://developers.cloudflare.com/terraform/)、[番外編：Terraform の state と、置き場所](extra-terraform-state.md)
+参考：[Cloudflare Terraform provider](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs)、[Cloudflare と Terraform](https://developers.cloudflare.com/terraform/)、[番外編：Terraform の state と、置き場所](../notes/extra-terraform-state.md)
 
 ## Step 8：運用の仕組みを足す（見送り）
 
@@ -367,7 +367,7 @@ curl -sI https://sample-cf-workers-d1.alphajinsei.com/api/memos | head -1  # 200
 
 ## Step 9：振り返りとテンプレート化（Claude と一緒に）
 
-- [x] 各ステップでつまずいた点と、理解ポイントへの答えを `docs/` にメモする（[勉強メモ](study-notes.md) と番外編で済んだ）
+- [x] 各ステップでつまずいた点と、理解ポイントへの答えを `docs/` にメモする（[勉強メモ](../notes/study-notes.md) と番外編で済んだ）
 - [x] 方式①（静的サイト）のサンプル `sample-cf-workers-static` を作る（Claude が作成。Astro + Workers Static Assets、デプロイは `npm run deploy`）。公開先は https://sample-cf-workers-static.alphajinsei.com
 
 ```bash
@@ -391,7 +391,7 @@ gh repo edit alphajinsei/sample-cf-workers-static --visibility public --accept-v
 ```bash
 gh repo create <name> --template alphajinsei/sample-cf-workers-d1 --public --clone
 ```
-- [x] サービス開発側に渡すインフラ設計資料をまとめる：全方式共通は [サービス開発ガイド](service-guide.md)、方式ごとは各サンプルの `README.md`（見出しは6つにそろえる）
+- [x] サービス開発側に渡すインフラ設計資料をまとめる：全方式共通は [サービス開発ガイド](../service-guide.md)、方式ごとは各サンプルの `README.md`（見出しは6つにそろえる）
 - [ ] 以降のサービスのデプロイは Claude に任せる（実際のサービスを作るときに）
 
-次：方式③（OCI）のサンプル。別のセッションで始める。引き継ぎは [handoff-method3-oci.md](handoff-method3-oci.md)
+次：方式③（OCI）。[学習ロードマップ：OCI](oci.md)

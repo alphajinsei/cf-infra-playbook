@@ -4,7 +4,7 @@
 
 個人サービスを作るときに、インフラについて知っておくことをまとめた資料。読むのは開発する自分と Claude。どの方式でも共通のことはここに書き、方式ごとのこと（構成・ビルド・デプロイ・新しいサービスの始め方）は、各サンプルの README に書く。
 
-なぜこの構成にしたかは [方式検討サマリ](infra-design-summary.md)、どう学んだかは [学習ロードマップ](learning-roadmap.md) と [勉強メモ](study-notes.md) を見る。
+なぜこの構成にしたかは [方式検討](design/overview.md)（方式ごとに [Cloudflare](design/cloudflare.md)・[OCI](design/oci.md)）、どう学んだかは [学習ロードマップ](roadmaps/) と [勉強メモ](notes/study-notes.md) を見る。
 
 ## 1. 全体像
 
@@ -41,7 +41,7 @@
 | --- | --- |
 | 記事・ページを表示するだけ（Markdown のブログ、SPA） | ① 標準・静的 |
 | データを保存・検索するアプリ（フォーム、メモ、API、Bot の Webhook） | ② 標準・アプリ + DB |
-| Workers で動かないもの（常駐プロセス、WebSocket の常時接続、任意の言語、PostgreSQL が必須） | ③ 汎用VM（準備中） |
+| Workers で動かないもの（常駐プロセス、WebSocket の常時接続、任意の言語、コンテナで動かしたいもの、メールサーバー） | ③ 汎用VM（作成中） |
 | 大手クラウドを触ってみたい | ④ 学習方式（サービスごとに試す） |
 
 ①で始めて、あとから API が欲しくなったら、同じ Worker に `main` を足せば②になる。
@@ -57,7 +57,7 @@
 | ⓪ 既存・Pages（新規には使わない） | なし（既存の例：`dia-logos`） | Cloudflare Pages + GitHub 連携。main に push すると Cloudflare がリポジトリを取りに行ってビルド・デプロイする | なし（下の「⓪ について」） |
 | ① 標準・静的 | `sample-cf-workers-static` | Astro（SSG）+ Workers Static Assets | [README](https://github.com/alphajinsei/sample-cf-workers-static#readme) |
 | ② 標準・アプリ + DB | `sample-cf-workers-d1` | Workers + Hono + D1 + Drizzle、Access は Terraform | [README](https://github.com/alphajinsei/sample-cf-workers-d1#readme) |
-| ③ 汎用VM | 未作成（OCI の VM と ADB は作成済み） | OCI VM + Docker + PostgreSQL + Cloudflare Tunnel（予定） | |
+| ③ 汎用VM | 作成中（共通基盤 `oci-platform` + サンプル `sample-oci-vm-docker`、名前は仮） | OCI Always Free：Cloudflare → Flexible LB → Docker ホスト（A1）→ MySQL HeatWave。構成は [方式検討：OCI](design/oci.md) | |
 | ④ 学習方式 | 未作成 | | |
 
 手元では `~/claude-sandbox/<サンプル名>/README.md`。
@@ -166,7 +166,7 @@
 | `wrangler dev` 中に、勝手にトンネルやリモートに切り替わる | ターミナルへの貼り付け（Ctrl+V）が1文字のキー操作として実行された。Ctrl+C で止める |
 | Access を apply したのに効かない | エッジに行き渡るまで数分かかる |
 | workers.dev の URL が開いたまま | `wrangler.jsonc` に `"workers_dev": false` を書く（書かないとデプロイのたびに既定値の「有効」に戻る） |
-| `drizzle-kit generate` が既存のテーブルを作る SQL を出す | 手書きのマイグレーションの後から Drizzle を入れた（ベースラインの問題）。[番外編](extra-db-schema-management.md) |
+| `drizzle-kit generate` が既存のテーブルを作る SQL を出す | 手書きのマイグレーションの後から Drizzle を入れた（ベースラインの問題）。[番外編](notes/extra-db-schema-management.md) |
 | `env.DB` の型が出ない | `npx wrangler types` で `worker-configuration.d.ts` を作り直す |
 | Terraform のネットの例が動かない | Cloudflare provider の v4 の書き方。v5 では名前と書き方が違う（`cloudflare_zero_trust_access_*`） |
 

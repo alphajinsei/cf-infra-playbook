@@ -1,33 +1,10 @@
-# 個人サービス公開インフラ 方式検討サマリ
+# 個人サービス公開インフラ 方式検討：Cloudflare（方式⓪①②）
 
 最終更新：2026-11-03
 
-個人サービスは Cloudflare（Workers + D1 ほか）を標準基盤とし、1サービス＝1ディレクトリでアプリからインフラまで完結させる。
-
-## 期待する要件
-
-| # | 要件 | 優先度 | 内容 |
-| --- | --- | --- | --- |
-| R1 | 定常コストゼロ | 必須 | 常時動かすものは無料枠で運用する。学習のための一時的な課金は可 |
-| R2 | 手軽なデプロイ | 必須 | 面倒な手順なしにデプロイ・更新できる（`npm run deploy` の1コマンド）。サービスを今後いくつも追加でき、立ち上げを CLI で完結できる |
-| R3 | プロジェクト内完結 | 強く希望 | 1つのディレクトリにアプリとインフラのコードが揃い、サービスを全レイヤ分そこで説明しきれる |
-| R4 | 構成管理 | できれば | Terraform / Ansible でコード化する（学習も兼ねる） |
-| R5 | 対象構成 | 必須 | (a) 静的コンテンツ配信のみ、(b) アプリケーションサーバ + DB |
-| R6 | 性能 | 考慮不要 | 個人サイト程度のアクセス |
-
-前提：ドメイン（例：alphajinsei.com）はお名前.comで取得済みで、DNSはCloudflareで運用中。静的サイトは Cloudflare Pages + GitHub連携で運用実績あり（dia-logos）。保育園のページは Cloudflare Access で保護中。アプリの言語は未定（AIで生成する前提）。
+個人サービスは Cloudflare（Workers + D1 ほか）を標準基盤とし、1サービス＝1ディレクトリでアプリからインフラまで完結させる。要件と方式の一覧は [全体](overview.md)、方式③は [OCI](oci.md) に分けた。
 
 ## 推奨構成と理由
-
-構成は4つの方式に分ける。新しいサービスはまず標準方式で作り、そこで実現できないときだけ他の方式を使う。既存の Pages のサイトは⓪として、そのまま残す。
-
-| 方式 | 構成 | 使う場面 |
-| --- | --- | --- |
-| ⓪ 既存・Pages | Cloudflare Pages + GitHub 連携（push でデプロイ） | 既存のサイト（dia-logos）だけ。新しいサービスには使わない |
-| ① 標準・静的 | Cloudflare Workers Static Assets（コードのない Worker）。Markdown なら Astro でビルド | 静的サイト、SPA |
-| ② 標準・アプリ + DB | Cloudflare Workers + D1（必要に応じて R2 / Access / Cron）。TypeScript + Hono + Drizzle | DBを使うアプリ全般。既定の選択肢 |
-| ③ 汎用VM方式 | OCI Always Free VM + Docker + Dokploy/Coolify + Cloudflare Tunnel | Workersで動かないもの（常駐プロセス、任意の言語、PostgreSQLが必須なもの） |
-| ④ 学習方式 | AWS Lambda + DynamoDB、GCP Cloud Run + Firestore、Azure Functions + Azure SQL など | 大手クラウドを触る目的で、1サービスずつ試す |
 
 標準を Cloudflare にする理由：
 
@@ -56,21 +33,6 @@ flowchart LR
 
 リクエストは DNS/CDN と（必要なら）Access を通って Worker に届き、Worker はバインディングで D1・R2・KV を使う。アプリのデプロイは、手元の PC から wrangler で行う（GitHub はコードの保管場所）。
 
-## 検討した選択肢
-
-大手クラウドは「常時稼働するVMやDB」が無期限無料にならず、課金の上限もないため学習方式に回す。数値は検討時点の記憶による概算で、採用前に公式ページでの確認が必要。
-
-| 選択肢 | 種類 | 無期限の無料枠（概算） | 判断 |
-| --- | --- | --- | --- |
-| AWS | 大手クラウド | Lambda 月100万リクエスト、DynamoDB 25GB。EC2/RDS は新規アカウントのクレジットのみ | 学習方式 |
-| GCP | 大手クラウド | Cloud Run 月200万リクエスト、Firestore 1GB、e2-micro 1台。Cloud SQL は無料なし | 学習方式 |
-| Azure | 大手クラウド | Functions、Cosmos DB 無料枠、Azure SQL Database 無料オファー | 学習方式 |
-| OCI | 大手クラウド | ARM VM 計4コア/24GB、Autonomous DB 2インスタンス（各約20GB） | 汎用VM方式。ADB は未使用で停止・回収、プライベートエンドポイント不可 |
-| Neon | DBのみ（PostgreSQL） | 0.5GB/プロジェクト。未使用で自動停止し、次の接続に待ちが発生 | 保留。PostgreSQL必須なら Workers + Hyperdrive と組む |
-| Supabase | DB + 認証/ストレージ/API | 500MB、2プロジェクト。1週間未使用で一時停止 | 保留 |
-| Render | アプリ実行（Heroku型） | Webサービスは15分未使用でスリープ。無料のPostgreSQLは期限付き | 不採用 |
-| Fly.io / Railway | アプリ実行 | 実質的に有料 | 不採用 |
-
 ## 設計上の論点
 
 ### 共通基盤とサービス固有の境界
@@ -79,7 +41,7 @@ flowchart LR
 
 | 層 | 含むもの | 置き場所 |
 | --- | --- | --- |
-| 共通基盤 | Cloudflareアカウント、DNSゾーン、Terraform state 用の R2 バケット、（使うなら）VM と Tunnel | platform リポジトリ |
+| 共通基盤 | Cloudflareアカウント、DNSゾーン、Terraform state 用の R2 バケット | infra リポジトリ（手で作ったものの記録） |
 | サービス固有 | アプリコード、DBとスキーマ、サブドメイン、Cron、Access、CI/CD | 各サービスのリポジトリ |
 
 標準方式のサービスのディレクトリ構成例：
@@ -97,13 +59,7 @@ my-service/
 
 標準方式では D1 を使うため、この懸念は発生しない。Worker から D1 へはバインディングで接続し、接続文字列もパスワードも不要で、DBがインターネットに公開されない。
 
-外部のDBサービス（Neon 等）や無料版の OCI ADB では、通信がインターネットを経由する。その場合は「経路は信用せず、TLSと認証で守る」ゼロトラストの考え方で対応する。実務上は遅延の方が問題になりやすく、Hyperdrive で接続をプールして緩和する。個人サイトのため、個人情報などの機密データは扱わない前提とする。
-
-### 汎用VM方式の Docker と冗長性
-
-- Docker は冗長化のためではなく、依存関係の分離（1台のVMで複数サービスのミドルウェアが衝突しない）、再現性、`Dockerfile` でサービスのディレクトリ内に完結させるために使う。
-- 冗長化はしない。VM 1台が単一障害点になることを受け入れ、Terraform + Ansible で「作り直せば元に戻る」状態を保つ。
-- DB は日次で R2 にバックアップする。目標は RTO 数時間、RPO 1日。
+外部のDBサービス（Neon 等）や無料版の OCI Autonomous DB では、通信がインターネットを経由する。その場合は「経路は信用せず、TLSと認証で守る」ゼロトラストの考え方で対応する。実務上は遅延の方が問題になりやすく、Hyperdrive で接続をプールして緩和する。個人サイトのため、個人情報などの機密データは扱わない前提とする。
 
 ## CI/CD
 
@@ -217,7 +173,7 @@ Cloudflare は「世界中のCDN拠点（エッジ）」の上に、実行環境
 
 ## ユースケース別の構成パターン
 
-どのユースケースも標準方式に部品を足すだけで組め、常駐接続が必要なものだけが汎用VM方式になる。
+どのユースケースも標準方式に部品を足すだけで組め、常駐接続が必要なものだけが方式③になる。
 
 | ユースケース | 例 | 構成 | 使い方 |
 | --- | --- | --- | --- |
@@ -226,16 +182,15 @@ Cloudflare は「世界中のCDN拠点（エッジ）」の上に、実行環境
 | 定期実行 | 毎朝RSSを集めて要約し保存する | Workers Cron Triggers（重い処理は GitHub Actions の schedule） | `crons` を書き `scheduled()` を実装。普段のアプリと同じ Worker に同居できる |
 | 自分だけが使うツール | 家計簿、管理画面 `/admin` | Access | ホスト名やパスに Access を設定し、Google/GitHub/メールOTPでログイン。保育園ページと同じ仕組み |
 | ファイル置き場 | 画像アップロード、バックアップ | R2 | Worker にバインドするか、カスタムドメインで公開 |
-| Bot・Webhook | Discordのスラッシュコマンド、LINE Bot | Workers | HTTPで呼ばれる型は Workers。WebSocketで常時接続する型は汎用VM方式 |
+| Bot・Webhook | Discordのスラッシュコマンド、LINE Bot | Workers | HTTPで呼ばれる型は Workers。WebSocketで常時接続する型は方式③ |
 | 問い合わせフォーム | サイトのフォーム | Workers + Turnstile | Turnstile でスパムを弾き、内容を D1 に保存 |
 | 独自ドメインのメール | contact@alphajinsei.com | Email Routing | 受信したメールを Gmail へ転送 |
 | 死活監視 | サービスの停止に気づきたい | UptimeRobot + Workers Logs | 停止をメールやDiscordに通知。アプリのログは Workers Logs で見る |
-| 任意の言語・常駐プロセス | Rails、PostgreSQL必須のアプリ | 汎用VM方式 | Docker コンテナを Dokploy でデプロイし、Tunnel で公開 |
+| 任意の言語・常駐プロセス | Rails、コンテナで配られている OSS | 方式③（[OCI](oci.md)） | Docker ホストにコンテナを置き、LB で公開 |
 
 ## 次のステップ
 
-- [ ] 標準方式（Workers + D1）でサンプルアプリを作り、サブドメインにデプロイする（[学習ロードマップ](learning-roadmap.md)）
-- [ ] Terraform state 用の R2 バケットと API トークンを用意する
+- [x] 標準方式（Workers + D1）でサンプルアプリを作り、サブドメインにデプロイする（[学習ロードマップ：Cloudflare](../roadmaps/cloudflare.md)）
+- [x] Terraform state 用の R2 バケットと API トークンを用意する
 - [x] 方式①（静的サイト）のサンプル（`sample-cf-workers-static`）を作り、デプロイ方法を決める（アプリと同じ `npm run deploy`）
-- [x] サンプルをもとに、サービス開発側が使うインフラ設計資料（テンプレートと手順）を作る（[サービス開発ガイド](service-guide.md) と各サンプルの README。テンプレートはサンプルそのもの）
-- [ ] 無料枠の数値を各社の公式ページで確認する
+- [x] サンプルをもとに、サービス開発側が使うインフラ設計資料（テンプレートと手順）を作る（[サービス開発ガイド](../service-guide.md) と各サンプルの README。テンプレートはサンプルそのもの）

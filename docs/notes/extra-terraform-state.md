@@ -2,7 +2,7 @@
 
 最終更新：2026-11-03
 
-[学習ロードマップ](learning-roadmap.md) の Step 7 で、state を R2 に置く理由の整理。
+[学習ロードマップ](../roadmaps/cloudflare.md) の Step 7 で、state を R2 に置く理由の整理。
 
 ## Terraform の仕組み
 

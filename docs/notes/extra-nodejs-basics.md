@@ -2,7 +2,7 @@
 
 最終更新：2026-11-02
 
-[学習ロードマップ](learning-roadmap.md) の Step 0-2 で出てくる用語の整理。
+[学習ロードマップ](../roadmaps/cloudflare.md) の Step 0-2 で出てくる用語の整理。
 
 ## 4つの道具の関係
 
