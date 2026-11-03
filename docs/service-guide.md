@@ -162,6 +162,7 @@
 | --- | --- |
 | `npm` や `npx` が `/mnt/c/...` の Windows 側を指す | WSL の PATH に Windows の PATH が足されている。nvm で WSL 側に Node.js を入れる。Claude の Bash は非対話シェルで nvm が読まれないので `bash -ic '...'` で実行する |
 | `npm run deploy` が認証で失敗する | ターミナルに `CLOUDFLARE_API_TOKEN` が残っている。`unset CLOUDFLARE_API_TOKEN` して `wrangler login` のほうを使う |
+| `npm run deploy` が `code: 7403`（not authorized）で失敗する。`CLOUDFLARE_API_TOKEN` は入っていない | OAuth のアクセストークンの期限切れが疑わしい（2026-11-03 に1回発生。`npx wrangler whoami` を実行したあとは成功した）。`npx wrangler whoami` → 再実行。直らなければ `npx wrangler login` |
 | `wrangler dev` 中に、勝手にトンネルやリモートに切り替わる | ターミナルへの貼り付け（Ctrl+V）が1文字のキー操作として実行された。Ctrl+C で止める |
 | Access を apply したのに効かない | エッジに行き渡るまで数分かかる |
 | workers.dev の URL が開いたまま | `wrangler.jsonc` に `"workers_dev": false` を書く（書かないとデプロイのたびに既定値の「有効」に戻る） |
