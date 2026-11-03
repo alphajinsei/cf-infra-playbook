@@ -267,9 +267,41 @@ ansible-playbook upgrade.yml
 
 ## Step 4：DB と Vault
 
-- [ ] HeatWave を private-db に作る
-- [ ] Vault を作り、DB の管理者パスワードを入れる
-- [ ] ops から mysql クライアントでつなぐ
+コードは `oci-platform/terraform/database.tf`（HeatWave）と `vault.tf`（Vault、管理者のパスワード、インスタンス・プリンシパルの権限）、`ansible/roles/ops_tools`（ops に mysql のクライアントと oci CLI）。
+
+- [x] HeatWave（MySQL.Free、private-db、削除保護あり）と Vault を作る。Always Free ではバックアップの設定（backup_policy）を作成時に指定できない（`InvalidParameter`）ので書かず、OCI の既定の自動バックアップにする。中身はコンソールで確かめる（既定は「有効、保存1日」だった）。HeatWave が VNIC を作って NSG に入るには、DB システム自身の権限のポリシー（`platform-mysql`）が要る（ないと FAILED。`database.tf` に入れた）。できた MySQL のバージョンは 26.10.0。管理者のパスワードは Terraform が作って Vault に入れる。HeatWave の作成には 15〜20 分かかる
+
+```bash
+cd ~/claude-sandbox/oci-platform/terraform
+terraform init        # random provider が増えたので
+terraform plan
+terraform apply
+terraform output mysql
+terraform output -raw vault_id
+```
+
+- [x] ops に mysql のクライアントと oci CLI を入れる（oci CLI の認証は、鍵を置かずにインスタンス・プリンシパルで行う）
+
+```bash
+cd ~/claude-sandbox/oci-platform/ansible
+ansible-playbook site.yml
+```
+
+- [x] ops から、Vault のパスワードを取り出して HeatWave につなぐ（IAM のポリシーが効くまで1分ほどかかることがある）
+
+```bash
+ssh oci-ops
+VAULT=<terraform output -raw vault_id の値>
+PW=$(oci secrets secret-bundle get-secret-bundle-by-name --auth instance_principal \
+  --vault-id "$VAULT" --secret-name mysql-admin-password \
+  --query 'data."secret-bundle-content".content' --raw-output | base64 -d)
+mysql -h mysql.db.platform.oraclevcn.com -u admin -p"$PW" -e 'SELECT VERSION();'
+```
+
+理解ポイント：
+
+- インスタンス・プリンシパルでは、何が「鍵」の代わりになっているか（動的グループに入っている VM であること）。
+- パスワードは、どこに・どの形で残っているか（Vault、Terraform の state）。
 
 ## Step 5：LB と公開
 

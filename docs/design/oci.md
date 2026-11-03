@@ -199,6 +199,7 @@ Client --HTTPS--> Cloudflare edge --HTTPS (Origin CA cert, verified)--> OCI LB :
 
 - **結論：標準の DB は MySQL HeatWave。** ADB と NoSQL は「そのアプリに合うときだけ、アプリ側で足す」選択肢として残す。要件が変わったら考え直す。
 - PostgreSQL は Always Free にない（OCI Database with PostgreSQL は有料）。
+- 作ってみて分かったこと：バックアップの設定は Always Free では指定できず、既定（有効、保存1日）になる。HeatWave は VNIC の作成と NSG への参加を DB システム自身の権限で行うので、そのためのポリシー（`request.principal.type='mysqldbsystem'`）が要る。作成時の版は 26.10.0（手元の開発用の MySQL コンテナはこれに合わせる）。
 - アプリごとに、スキーマと DB ユーザーを1組作る（D1 の「アプリごとに DB」に当たる）。
 
 ## 7. SSH と構成管理
@@ -313,7 +314,7 @@ Dev PC (WSL)
 | Budget | 予算アラート（金額が0円を超えたら通知）。枠を超えて課金されたことに気付くため |
 | OS の更新（自動） | unattended-upgrades でセキュリティの更新だけ毎日入れる。**自動で再起動しない。Docker 本体は対象外**。needrestart にも Docker を再起動させない。Docker は `live-restore` で、デーモンが再起動してもコンテナを止めない。これで、勝手にコンテナが止まることはない |
 | OS の更新（手動） | 月に1回などで `ansible-playbook upgrade.yml`。カーネルと Docker も含めて全部更新し、再起動が要る VM だけ1台ずつ再起動する（その間、その VM のコンテナは1〜2分止まる）。コンテナの中身は OS の更新では直らないので、イメージの作り直し（デプロイ）で更新する |
-| バックアップ | HeatWave は自動バックアップ。メールのボリュームはボリュームのバックアップ。Terraform の state はバケットのバージョニング |
+| バックアップ | HeatWave は OCI の既定の自動バックアップ（Always Free では設定を指定できない）。メールのデータ（`/srv/mail`）は Object Storage に定期的に退避する（Step 8）。VM はブートボリュームのバックアップ（5つまで無料）。Terraform の state はバケットのバージョニング |
 
 ## 12. 要確認のまとめ
 

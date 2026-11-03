@@ -144,11 +144,16 @@
 - OS の自動更新でコンテナが止まる原因は、OS の再起動と Docker 本体の更新の2つ。自動再起動を切り、Docker 本体を自動更新から外し、needrestart にも Docker を再起動させず、Docker の `live-restore`（デーモンが再起動してもコンテナを動かしたままにする）を入れれば、自動更新でコンテナは止まらない。カーネルの更新は、手で再起動するまで効かない。
 - 対策は2段構え。①自動更新では再起動を起こさない（上の設定。夜中にやるのはパッケージの入れ替えだけ）。②それでも再起動したとき（手で流す更新、OCI のメンテナンス、障害）は、Docker が OS の起動時に自動で起動し（`systemctl enable docker`）、`restart: unless-stopped` を付けたコンテナを自動で起動し直す。止まるのは OS が上がるまでの1〜2分だけ。自分で `docker stop` したコンテナだけは止めたままになる。
 - OS を更新しても、コンテナの中身（ベースイメージのライブラリ）は直らない。イメージを作り直して入れ替える。
-- Bastion は、VM の 22 番に最長3時間だけ通れるセッションを作る、OCI の踏み台。VM に公開 IP が要らない。いざというときは、コンソール接続（シリアルコンソール）でネットワークを通らずに入れる。
+- Bastion は、VM の 22 番に最長3時間だけ通れるセッションを作る、OCI の踏み台。VM に公開 IP が要らない。いざというときは、コンソール接続（シリアルコンソール）でネットワークを通らずに入れる。SSH は2段（Bastion へ、そのトンネルの中で VM へ）で、手でつなぐ手順は → [番外編：OCI Bastion で VM に SSH する](extra-oci-bastion.md)
+- `terraform output` は、apply のときに state に保存された output の値を読んで表示するだけ（API には問い合わせない）。`-raw` は文字列を引用符なしで出す（シェルの変数に入れるとき）。アプリ側の Terraform は `terraform_remote_state` で同じ値を読む。
+- Vault は金庫、Key は金庫に据え付けた暗号化の機械（外に出せず、中身も読めない。暗号化と復号を頼めるだけ）、Secret は金庫に預けた書類（Key で暗号化して保管され、権限があれば取り出せる）。Secret を読むと Vault が裏で Key で復号する。AWS で言うと Key が KMS、Secret が Secrets Manager。VM には `read secret-family`（読むだけ）を与え、Key を直接使う権限は渡していない。
 - Bastion のセッションの鍵は RSA だけ。ed25519 を渡してもセッションは作れてしまうが、接続で `Permission denied (publickey)` になる。セッションの名前（display name）も英字で始める（数字で始まると InvalidParameter）。
 - OCI が塞いでいるのは外へ出す 25 番だけ。自前のメールサーバーは、受信は 25 番で直接受け、送信は Email Delivery に 587 番で中継すると、申請も IP の評判の問題も避けられる。
 - Cloudflare の DNS でプロキシ（オレンジの雲）を有効にすると、名前解決で返るのは Cloudflare のエッジの IP になる。利用者がつなぐのは Cloudflare で、Cloudflare が改めてオリジン（OCI の LB）につなぎ直す。そのため LB に来るのは Cloudflare の IP だけで、NSG でそこに絞れば、LB の IP を直接たたく迂回を防げる。Origin 証明書はブラウザに信頼されず Cloudflare だけが信頼するので、プロキシを外すと HTTPS も通らなくなる。
 - Cloudflare とオリジンの間の暗号化は、SSL/TLS の暗号化モードで決まる。Flexible は Cloudflare → オリジンが HTTP、Full は HTTPS だが証明書を検証しない、Full (strict) は HTTPS で証明書も検証する。③は Full (strict) で、LB が受けるのは 443番だけ。モードはゾーン全体の設定だが、Workers・Pages はエッジで動くので、①②では関係がなかった。
+- Always Free の MySQL HeatWave（`MySQL.Free`）は、作成時にバックアップの設定（`backup_policy`）を指定できない（`Cannot specify backup policy ... for an Always Free DB system`）。OCI の既定の自動バックアップになる。
+- MySQL HeatWave は、サブネットへの VNIC の作成と NSG への参加を、DB システム自身の権限（リソース・プリンシパル）で行う。管理者の権限は使われないので、`Allow any-user to {VNIC_CREATE, ...} ... where request.principal.type='mysqldbsystem'` のポリシーが別に要る。ないと DB システムが FAILED になり、出るのは「AuthorizationFailed」だけ。原因は Audit のログで、自分以外（authType が resource）の 404 を探して分かった（`CreateInternalVnic`）。
+- pipx は、Python 製のコマンドを1つずつ専用の venv に入れ、コマンドだけを `~/.local/bin` に置く道具。Ubuntu 24.04 はシステムの Python への `pip install` を禁止している（PEP 668）ので、apt にない Python 製の CLI（oci CLI など）は pipx で入れる。Ansible の `community.general.pipx` モジュールは pipx 1.7 以上が前提で、Ubuntu 24.04 の pipx（1.4）では動かない。`command: pipx install ...` に `creates:`（このファイルがあれば実行しない）を付けて、何度流しても同じ状態を保った。
 - Terraform の state は、公式の `oci` backend で Object Storage に置ける（ロックあり。S3 互換の方法は非推奨）。
 - A1 は Arm なので、x86 の WSL でビルドするイメージは `docker buildx --platform linux/arm64` でクロスビルドする。
 - サブドメインとパスの振り分けの比較：パスにすると、アプリ全体に base path の設定が要り、Cookie などのオリジンも共有になる。サブドメインなら Origin 証明書 `*.alphajinsei.com` 1枚で足り、方式をまたいで DNS の向け先を変えるだけで移せる。→ [方式検討：OCI](../design/oci.md)
