@@ -6,7 +6,8 @@
 
 - 個人サービスは Cloudflare（Workers + D1 ほか）を標準基盤にし、1サービス＝1ディレクトリでアプリからインフラまで完結させる。方針と理由は [docs/infra-design-summary.md](docs/infra-design-summary.md)。
 - まず標準構成のサンプル（メモ帳アプリ）を、ユーザー自身の手で作ってデプロイし、構成管理まで一通り経験する。手順と進捗は [docs/learning-roadmap.md](docs/learning-roadmap.md)。
-- 学習が終わったら、サービス用のテンプレートを作り、以降のサービスのデプロイは Claude に任せる。
+- 学習が終わったら、以降のサービスのデプロイは Claude に任せる。テンプレートは別に作らず、サンプル（GitHub の Template repository）をそのまま使う。
+- サービスを作るときに読む資料は [docs/service-guide.md](docs/service-guide.md)（全枠共通）と、各サンプルの `README.md`（枠ごと。見出しは6つにそろえる）。新しい枠のサンプルを作ったら、ガイドの「枠の一覧」に1行足す。
 - 会話の中で分かったことは [docs/study-notes.md](docs/study-notes.md)（勉強メモ）に短く追記していく。長くなる解説は `docs/extra-*.md`（番外編）に分け、勉強メモからリンクする。
 
 ## ディレクトリ構成

@@ -380,6 +380,16 @@ npm install -D wrangler
 npm run deploy
 gh repo create sample-cf-workers-static --private --source . --push
 ```
-- [ ] Claude と一緒に、サービス用テンプレート（ディレクトリ構成、`wrangler.jsonc`、Terraform、CI）を作る
-- [ ] サービス開発側に渡すインフラ設計資料をまとめる
+- [x] 2つのサンプルを public にする（コミットの作者とd1 の `main.tf` に gmail が入っているが、そのまま公開すると判断した。infra は `cf-infra-playbook` として public、作者は noreply）
+
+```bash
+gh repo edit alphajinsei/sample-cf-workers-d1 --visibility public --accept-visibility-change-consequences
+gh repo edit alphajinsei/sample-cf-workers-static --visibility public --accept-visibility-change-consequences
+```
+- [x] サービス用テンプレート：別には作らず、2つのサンプルを GitHub の Template repository にした（設定は画面から）。コピーしたあとに書き換える場所は、各サンプルの README の5章
+
+```bash
+gh repo create <name> --template alphajinsei/sample-cf-workers-d1 --public --clone
+```
+- [x] サービス開発側に渡すインフラ設計資料をまとめる：全枠共通は [サービス開発ガイド](service-guide.md)、枠ごとは各サンプルの `README.md`（見出しは6つにそろえる）
 - [ ] 以降のサービスのデプロイは Claude に任せる

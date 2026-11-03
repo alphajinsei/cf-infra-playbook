@@ -15,6 +15,7 @@
 - `.gitattributes` の `* text=auto eol=lf` は、テキストファイルの改行を LF にそろえるリポジトリの設定。`core.autocrlf` は自分のパソコンの設定なので、リポジトリに書いておくほうが誰が clone しても確実に効く。CRLF が混ざると、シェルスクリプトが `bad interpreter: /bin/bash^M` で動かなくなる。
 - `gh repo create <名前> --private --source . --push` で、手元の既存リポジトリから GitHub のリポジトリを作り、`origin` の登録と push まで一度にできる（ブラウザで作る必要がない）。
 - コミットには作者のメールアドレスが必ず記録され、公開リポジトリでは誰でも `git log` で見られる。GitHub が用意する noreply アドレス（`<ID>+<ユーザー名>@users.noreply.github.com`）を使うと、本物のアドレスを隠したまま、アカウントのコミットとして扱われる。メールは届かない。infra（GitHub では `cf-infra-playbook`、公開）はリポジトリ単位で `git config user.email` に設定し、公開前のコミットも `git filter-branch --env-filter` で書き換えた。プッシュ前なら、履歴の書き換えは他に影響しない。
+- GitHub の Template repository（リポジトリの Settings で有効にする）は、`gh repo create <新しい名前> --template <元のリポジトリ> --clone` で、履歴なしの丸ごとコピーを作れる機能。サンプルが薄いうちは、テンプレートを別に作ると中身がほぼ重複し、2つを同じ状態に保つ手間が増えるので、サンプルそのものをテンプレートにした。
 - git リポジトリの中で別のプロジェクトを `git init` すると入れ子になる。親で `git add .` しても、子は中身のない参照としてしか記録されない。サンプルは infra の隣に `sample-<基盤>-<構成>/` として置くことにした。
 
 ## Claude Code
