@@ -7,7 +7,7 @@
 - 個人サービスは Cloudflare（Workers + D1 ほか）を標準基盤にし、1サービス＝1ディレクトリでアプリからインフラまで完結させる。方針と理由は [docs/infra-design-summary.md](docs/infra-design-summary.md)。
 - まず標準構成のサンプル（メモ帳アプリ）を、ユーザー自身の手で作ってデプロイし、構成管理まで一通り経験する。手順と進捗は [docs/learning-roadmap.md](docs/learning-roadmap.md)。
 - 学習が終わったら、以降のサービスのデプロイは Claude に任せる。テンプレートは別に作らず、サンプル（GitHub の Template repository）をそのまま使う。
-- サービスを作るときに読む資料は [docs/service-guide.md](docs/service-guide.md)（全枠共通）と、各サンプルの `README.md`（枠ごと。見出しは6つにそろえる）。新しい枠のサンプルを作ったら、ガイドの「枠の一覧」に1行足す。
+- サービスを作るときに読む資料は [docs/service-guide.md](docs/service-guide.md)（全方式共通）と、各サンプルの `README.md`（方式ごと。見出しは6つにそろえる）。新しい方式のサンプルを作ったら、ガイドの「方式の一覧」に1行足す。
 - 会話の中で分かったことは [docs/study-notes.md](docs/study-notes.md)（勉強メモ）に短く追記していく。長くなる解説は `docs/extra-*.md`（番外編）に分け、勉強メモからリンクする。
 
 ## ディレクトリ構成
@@ -17,8 +17,8 @@
 ├── infra/                  このリポジトリ（方針・ロードマップ・番外編）
 │   └── .secrets/           API トークンなどの置き場。git 管理外（.gitignore）
 └── sample-<基盤>-<構成>/   方式ごとのサンプルアプリ。それぞれ独立した git リポジトリ
-    例：sample-cf-workers-d1（枠②：アプリ + D1。ロードマップのサンプル）
-        sample-cf-workers-static（枠①：Astro の静的サイト）
+    例：sample-cf-workers-d1（方式②：アプリ + D1。ロードマップのサンプル）
+        sample-cf-workers-static（方式①：Astro の静的サイト）
 ```
 
 - infra は GitHub では `alphajinsei/cf-infra-playbook`（公開）。手元のフォルダ名は infra のまま。公開リポジトリなので、秘密情報や個人のメールアドレスを書かない。コミットの作者は noreply アドレス（リポジトリ単位で `git config user.email` に設定済み）。

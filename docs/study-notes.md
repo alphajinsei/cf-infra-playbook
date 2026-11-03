@@ -46,7 +46,7 @@
 - Worker はサーバーを起動して待ち受けるのではない。コードは、デプロイ時に世界中のデータセンターに配られる。リクエストが着いたサーバーで isolate を用意し、`fetch()` を呼ぶ。→ [番外編：Workers の実行環境](extra-workers-runtime.md)
 - `main` は実行するコード、`assets` はそのまま返すファイル。パスに合うファイルが `public/` にあれば、エッジがそれを返す（Worker は呼ばれない）。なければ Worker の `fetch()` が呼ばれる。振り分けているのは Cloudflare のエッジで、自分のコードではない。
 - `wrangler dev` は起動中に1文字のキー操作を受け付ける（`b` ブラウザ、`t` トンネル、`x` 終了など）。VSCode のターミナルで Ctrl+V は貼り付けなので、貼り付けた文字がキー操作として次々に実行されることがある。実際に起きたのは次の2つで、どちらも Ctrl+C で止まり、本番のデプロイ履歴には何も残らなかった。
-  - `t`：`cloudflared` を自動でダウンロードし、Quick Tunnel（`*.trycloudflare.com` の使い捨て URL）で手元の dev サーバーを一時的にインターネットに公開する。URL を知っている人は誰でもアクセスできる。Cloudflare Tunnel は、設計方針の「枠④」（VM を、ポートを開けずに公開する）で使う予定の技術。
+  - `t`：`cloudflared` を自動でダウンロードし、Quick Tunnel（`*.trycloudflare.com` の使い捨て URL）で手元の dev サーバーを一時的にインターネットに公開する。URL を知っている人は誰でもアクセスできる。Cloudflare Tunnel は、設計方針の「方式④」（VM を、ポートを開けずに公開する）で使う予定の技術。
   - ローカル／リモートの切り替え：remote preview にすると、Cloudflare 上で Worker をプレビューとして動かし、D1 も本番の DB につながる。本番のデプロイとは別物。
 
 ## ドメインと DNS
@@ -73,7 +73,7 @@
 - `wrangler deploy --message "$(git describe --always --dirty)"` で、デプロイの履歴にそのときのコミットを残せる。コミット前の変更を含むと `-dirty` が付く。統制はしないが、あとから追えるようにする軽い仕組み。
 - Pages も `wrangler pages deploy` で同じ方式にできる。ただし、GitHub 連携で作った Pages のプロジェクトは CLI 方式に切り替えられず、作り直しになる。乗り換えるなら Workers の Static Assets に移すのが自然。
 
-## 静的サイト（枠①）
+## 静的サイト（方式①）
 
 - Workers は、静的サイトの配信に限れば Pages のほぼ上位互換。Pages にしかない実行環境はない（Pages Functions も中身は workerd）。Pages 固有なのは `functions/` フォルダのファイルベースのルーティングくらいで、Git 連携やプレビューは Workers Builds でもできる。Cron、Durable Objects、Workers Logs など新しい機能は Workers にしかない。
 - 静的サイトもアプリと同じく `npm run deploy`（`astro build && wrangler deploy`）にそろえた。SSG はビルドがあるので「失敗しようがない」わけではなく、手元でビルドすれば `astro dev` で見たものと同じ成果物が出る。

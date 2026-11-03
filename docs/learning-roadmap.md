@@ -368,7 +368,7 @@ curl -sI https://sample-cf-workers-d1.alphajinsei.com/api/memos | head -1  # 200
 ## Step 9：振り返りとテンプレート化（Claude と一緒に）
 
 - [x] 各ステップでつまずいた点と、理解ポイントへの答えを `docs/` にメモする（[勉強メモ](study-notes.md) と番外編で済んだ）
-- [x] 枠①（静的サイト）のサンプル `sample-cf-workers-static` を作る（Claude が作成。Astro + Workers Static Assets、デプロイは `npm run deploy`）。公開先は https://sample-cf-workers-static.alphajinsei.com
+- [x] 方式①（静的サイト）のサンプル `sample-cf-workers-static` を作る（Claude が作成。Astro + Workers Static Assets、デプロイは `npm run deploy`）。公開先は https://sample-cf-workers-static.alphajinsei.com
 
 ```bash
 cd ~/claude-sandbox
@@ -391,5 +391,5 @@ gh repo edit alphajinsei/sample-cf-workers-static --visibility public --accept-v
 ```bash
 gh repo create <name> --template alphajinsei/sample-cf-workers-d1 --public --clone
 ```
-- [x] サービス開発側に渡すインフラ設計資料をまとめる：全枠共通は [サービス開発ガイド](service-guide.md)、枠ごとは各サンプルの `README.md`（見出しは6つにそろえる）
+- [x] サービス開発側に渡すインフラ設計資料をまとめる：全方式共通は [サービス開発ガイド](service-guide.md)、方式ごとは各サンプルの `README.md`（見出しは6つにそろえる）
 - [ ] 以降のサービスのデプロイは Claude に任せる

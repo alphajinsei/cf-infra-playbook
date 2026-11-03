@@ -19,14 +19,14 @@
 
 ## 推奨構成と理由
 
-構成は4つの枠に分ける。新しいサービスはまず標準枠で作り、そこで実現できないときだけ他の枠を使う。
+構成は4つの方式に分ける。新しいサービスはまず標準方式で作り、そこで実現できないときだけ他の方式を使う。
 
-| 枠 | 構成 | 使う場面 |
+| 方式 | 構成 | 使う場面 |
 | --- | --- | --- |
 | ① 標準・静的 | Cloudflare Workers Static Assets（コードのない Worker）。Markdown なら Astro でビルド | 静的サイト、SPA |
 | ② 標準・アプリ + DB | Cloudflare Workers + D1（必要に応じて R2 / Access / Cron）。TypeScript + Hono + Drizzle | DBを使うアプリ全般。既定の選択肢 |
-| ③ 学習枠 | AWS Lambda + DynamoDB、GCP Cloud Run + Firestore、Azure Functions + Azure SQL など | 大手クラウドを触る目的で、1サービスずつ試す |
-| ④ 汎用VM枠 | OCI Always Free VM + Docker + Dokploy/Coolify + Cloudflare Tunnel | Workersで動かないもの（常駐プロセス、任意の言語、PostgreSQLが必須なもの） |
+| ③ 学習方式 | AWS Lambda + DynamoDB、GCP Cloud Run + Firestore、Azure Functions + Azure SQL など | 大手クラウドを触る目的で、1サービスずつ試す |
+| ④ 汎用VM方式 | OCI Always Free VM + Docker + Dokploy/Coolify + Cloudflare Tunnel | Workersで動かないもの（常駐プロセス、任意の言語、PostgreSQLが必須なもの） |
 
 標準を Cloudflare にする理由：
 
@@ -57,14 +57,14 @@ flowchart LR
 
 ## 検討した選択肢
 
-大手クラウドは「常時稼働するVMやDB」が無期限無料にならず、課金の上限もないため学習枠に回す。数値は検討時点の記憶による概算で、採用前に公式ページでの確認が必要。
+大手クラウドは「常時稼働するVMやDB」が無期限無料にならず、課金の上限もないため学習方式に回す。数値は検討時点の記憶による概算で、採用前に公式ページでの確認が必要。
 
 | 選択肢 | 種類 | 無期限の無料枠（概算） | 判断 |
 | --- | --- | --- | --- |
-| AWS | 大手クラウド | Lambda 月100万リクエスト、DynamoDB 25GB。EC2/RDS は新規アカウントのクレジットのみ | 学習枠 |
-| GCP | 大手クラウド | Cloud Run 月200万リクエスト、Firestore 1GB、e2-micro 1台。Cloud SQL は無料なし | 学習枠 |
-| Azure | 大手クラウド | Functions、Cosmos DB 無料枠、Azure SQL Database 無料オファー | 学習枠 |
-| OCI | 大手クラウド | ARM VM 計4コア/24GB、Autonomous DB 2インスタンス（各約20GB） | 汎用VM枠。ADB は未使用で停止・回収、プライベートエンドポイント不可 |
+| AWS | 大手クラウド | Lambda 月100万リクエスト、DynamoDB 25GB。EC2/RDS は新規アカウントのクレジットのみ | 学習方式 |
+| GCP | 大手クラウド | Cloud Run 月200万リクエスト、Firestore 1GB、e2-micro 1台。Cloud SQL は無料なし | 学習方式 |
+| Azure | 大手クラウド | Functions、Cosmos DB 無料枠、Azure SQL Database 無料オファー | 学習方式 |
+| OCI | 大手クラウド | ARM VM 計4コア/24GB、Autonomous DB 2インスタンス（各約20GB） | 汎用VM方式。ADB は未使用で停止・回収、プライベートエンドポイント不可 |
 | Neon | DBのみ（PostgreSQL） | 0.5GB/プロジェクト。未使用で自動停止し、次の接続に待ちが発生 | 保留。PostgreSQL必須なら Workers + Hyperdrive と組む |
 | Supabase | DB + 認証/ストレージ/API | 500MB、2プロジェクト。1週間未使用で一時停止 | 保留 |
 | Render | アプリ実行（Heroku型） | Webサービスは15分未使用でスリープ。無料のPostgreSQLは期限付き | 不採用 |
@@ -81,7 +81,7 @@ flowchart LR
 | 共通基盤 | Cloudflareアカウント、DNSゾーン、Terraform state 用の R2 バケット、（使うなら）VM と Tunnel | platform リポジトリ |
 | サービス固有 | アプリコード、DBとスキーマ、サブドメイン、Cron、Access、CI/CD | 各サービスのリポジトリ |
 
-標準枠のサービスのディレクトリ構成例：
+標準方式のサービスのディレクトリ構成例：
 
 ```
 my-service/
@@ -94,11 +94,11 @@ my-service/
 
 ### アプリとDBの間の通信
 
-標準枠では D1 を使うため、この懸念は発生しない。Worker から D1 へはバインディングで接続し、接続文字列もパスワードも不要で、DBがインターネットに公開されない。
+標準方式では D1 を使うため、この懸念は発生しない。Worker から D1 へはバインディングで接続し、接続文字列もパスワードも不要で、DBがインターネットに公開されない。
 
 外部のDBサービス（Neon 等）や無料版の OCI ADB では、通信がインターネットを経由する。その場合は「経路は信用せず、TLSと認証で守る」ゼロトラストの考え方で対応する。実務上は遅延の方が問題になりやすく、Hyperdrive で接続をプールして緩和する。個人サイトのため、個人情報などの機密データは扱わない前提とする。
 
-### 汎用VM枠の Docker と冗長性
+### 汎用VM方式の Docker と冗長性
 
 - Docker は冗長化のためではなく、依存関係の分離（1台のVMで複数サービスのミドルウェアが衝突しない）、再現性、`Dockerfile` でサービスのディレクトリ内に完結させるために使う。
 - 冗長化はしない。VM 1台が単一障害点になることを受け入れ、Terraform + Ansible で「作り直せば元に戻る」状態を保つ。
@@ -106,7 +106,7 @@ my-service/
 
 ## CI/CD
 
-インフラの構成（どこで動かすか）を決めたあと、学習ロードマップの Step 6 で「どうデプロイするか」を検討した。結論は、**アプリ（枠②）も静的サイト（枠①）も、手元の PC から `npm run deploy` でデプロイし、git は保管用に適宜 push する**。`deploy` スクリプトの中身だけが違う（アプリはマイグレーション＋`wrangler deploy`、静的サイトは `astro build`＋`wrangler deploy`）。
+インフラの構成（どこで動かすか）を決めたあと、学習ロードマップの Step 6 で「どうデプロイするか」を検討した。結論は、**アプリ（方式②）も静的サイト（方式①）も、手元の PC から `npm run deploy` でデプロイし、git は保管用に適宜 push する**。`deploy` スクリプトの中身だけが違う（アプリはマイグレーション＋`wrangler deploy`、静的サイトは `astro build`＋`wrangler deploy`）。
 
 一度は「GitHub Actions で main への push をデプロイにする」と決めて、サンプルで実際に動かした。そのうえで、使ってみた感触から手元のデプロイに戻した。
 
@@ -134,7 +134,7 @@ my-service/
 - A と C は矢印の向きが逆。A は Cloudflare が GitHub から取りに行き（GitHub へのアクセス権を Cloudflare に渡す）、C は GitHub が Cloudflare に送り込む（Cloudflare の API トークンを GitHub に預ける）。
 - B も CLI だけで完結するので、「Claude が代わりにできる」という点は満たしている。
 
-### 採用した構成（アプリ：枠②）
+### 採用した構成（アプリ：方式②）
 
 - 開発は `npx wrangler dev`（ローカルの D1）で確かめ、本番へは `npm run deploy` で出す。`package.json` の `deploy` スクリプトに、マイグレーションの適用とデプロイをまとめ、マイグレーションの流し忘れを防ぐ。デプロイの履歴にコミットを残したい場合は、`wrangler deploy` に `--message "$(git describe --always --dirty)"` を付ける（サンプルではシンプルさを優先して付けていない）。
 
@@ -151,9 +151,9 @@ my-service/
 - `drizzle-kit generate` は手元で実行し、生成された SQL を読んでから `npm run deploy` する。
 - ブランチごとのプレビューは使わない。確かめるのは `wrangler dev` で行う。プレビューを使うと本番と同じ D1 につながり、本番のデータに触れてしまう。
 
-### 静的サイト（枠①）と既存の Pages
+### 静的サイト（方式①）と既存の Pages
 
-| | アプリ（枠②） | 静的サイト（枠①、SSG） |
+| | アプリ（方式②） | 静的サイト（方式①、SSG） |
 | --- | --- | --- |
 | 手元で確かめる | `npx wrangler dev` | `npm run dev`（`astro dev`）。本番と同じ workerd で見るなら `npm run preview` |
 | `npm run deploy` の中身 | `wrangler d1 migrations apply DB --remote && wrangler deploy` | `astro build && wrangler deploy` |
@@ -163,7 +163,7 @@ my-service/
 - 静的サイトは Pages ではなく Workers Static Assets にする。静的ファイルの配信に限れば機能はほぼ同じだが、Cloudflare は新機能を Workers 側に入れていて、新しく作るなら Workers を勧めている。あとで API（問い合わせフォームなど）を足したくなったら、同じ Worker に `main` を足すだけで済む。Pages にしかない実行環境はない（Pages Functions も中身は workerd）。
 - 完全な静的サイトなら、Astro の Cloudflare アダプターは要らない。`astro build` の出力（`dist/`）を `assets` で配るだけ。`build.format: 'file'` にすると `posts/hello.html` の形で出力され、`/posts/hello` にリダイレクトなしで応答する。
 - 記事の公開が「この PC から `npm run deploy`」になり、スマホや GitHub の画面から書いて公開することはできない。必要になったら GitHub Actions を足す（下の参考の構成から、D1 の行をビルドの行に替える）。
-- 既存の Pages（dia-logos）は、現状の GitHub 連携のまま運用する。Pages も `wrangler pages deploy` で CLI からデプロイできるが、GitHub 連携で作った Pages のプロジェクトは CLI 方式（Direct Upload）に切り替えられず、作り直しになる。乗り換えるなら Workers Static Assets（枠①）に移すのが自然。
+- 既存の Pages（dia-logos）は、現状の GitHub 連携のまま運用する。Pages も `wrangler pages deploy` で CLI からデプロイできるが、GitHub 連携で作った Pages のプロジェクトは CLI 方式（Direct Upload）に切り替えられず、作り直しになる。乗り換えるなら Workers Static Assets（方式①）に移すのが自然。
 
 ### 試した GitHub Actions の構成（参考）
 
@@ -195,7 +195,7 @@ Cloudflare は「世界中のCDN拠点（エッジ）」の上に、実行環境
 
 ### アプリ層のライブラリ
 
-標準枠②の「TypeScript + Hono + Drizzle」は、Worker の中で動くアプリのコードに使うライブラリの組み合わせである。インフラではなくアプリ側の選択で、どちらも Workers 上で問題なく動く軽量なものを選んでいる。
+標準方式②の「TypeScript + Hono + Drizzle」は、Worker の中で動くアプリのコードに使うライブラリの組み合わせである。インフラではなくアプリ側の選択で、どちらも Workers 上で問題なく動く軽量なものを選んでいる。
 
 | ライブラリ | 何をするものか | 例えるなら | 選ぶ理由 |
 | --- | --- | --- | --- |
@@ -216,7 +216,7 @@ Cloudflare は「世界中のCDN拠点（エッジ）」の上に、実行環境
 
 ## ユースケース別の構成パターン
 
-どのユースケースも標準枠に部品を足すだけで組め、常駐接続が必要なものだけが汎用VM枠になる。
+どのユースケースも標準方式に部品を足すだけで組め、常駐接続が必要なものだけが汎用VM方式になる。
 
 | ユースケース | 例 | 構成 | 使い方 |
 | --- | --- | --- | --- |
@@ -225,16 +225,16 @@ Cloudflare は「世界中のCDN拠点（エッジ）」の上に、実行環境
 | 定期実行 | 毎朝RSSを集めて要約し保存する | Workers Cron Triggers（重い処理は GitHub Actions の schedule） | `crons` を書き `scheduled()` を実装。普段のアプリと同じ Worker に同居できる |
 | 自分だけが使うツール | 家計簿、管理画面 `/admin` | Access | ホスト名やパスに Access を設定し、Google/GitHub/メールOTPでログイン。保育園ページと同じ仕組み |
 | ファイル置き場 | 画像アップロード、バックアップ | R2 | Worker にバインドするか、カスタムドメインで公開 |
-| Bot・Webhook | Discordのスラッシュコマンド、LINE Bot | Workers | HTTPで呼ばれる型は Workers。WebSocketで常時接続する型は汎用VM枠 |
+| Bot・Webhook | Discordのスラッシュコマンド、LINE Bot | Workers | HTTPで呼ばれる型は Workers。WebSocketで常時接続する型は汎用VM方式 |
 | 問い合わせフォーム | サイトのフォーム | Workers + Turnstile | Turnstile でスパムを弾き、内容を D1 に保存 |
 | 独自ドメインのメール | contact@alphajinsei.com | Email Routing | 受信したメールを Gmail へ転送 |
 | 死活監視 | サービスの停止に気づきたい | UptimeRobot + Workers Logs | 停止をメールやDiscordに通知。アプリのログは Workers Logs で見る |
-| 任意の言語・常駐プロセス | Rails、PostgreSQL必須のアプリ | 汎用VM枠 | Docker コンテナを Dokploy でデプロイし、Tunnel で公開 |
+| 任意の言語・常駐プロセス | Rails、PostgreSQL必須のアプリ | 汎用VM方式 | Docker コンテナを Dokploy でデプロイし、Tunnel で公開 |
 
 ## 次のステップ
 
-- [ ] 標準枠（Workers + D1）でサンプルアプリを作り、サブドメインにデプロイする（[学習ロードマップ](learning-roadmap.md)）
+- [ ] 標準方式（Workers + D1）でサンプルアプリを作り、サブドメインにデプロイする（[学習ロードマップ](learning-roadmap.md)）
 - [ ] Terraform state 用の R2 バケットと API トークンを用意する
-- [x] 枠①（静的サイト）のサンプル（`sample-cf-workers-static`）を作り、デプロイ方法を決める（アプリと同じ `npm run deploy`）
+- [x] 方式①（静的サイト）のサンプル（`sample-cf-workers-static`）を作り、デプロイ方法を決める（アプリと同じ `npm run deploy`）
 - [x] サンプルをもとに、サービス開発側が使うインフラ設計資料（テンプレートと手順）を作る（[サービス開発ガイド](service-guide.md) と各サンプルの README。テンプレートはサンプルそのもの）
 - [ ] 無料枠の数値を各社の公式ページで確認する
