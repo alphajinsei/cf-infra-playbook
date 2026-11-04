@@ -178,9 +178,8 @@
 - LB のアクセスログとエラーログは、既定では記録されない。Logging の「ログ」（ソースが LB のサービス・ログ）を作ると記録が始まる。コンソールの LB 作成ウィザードの「ロギングの管理」は、これを裏で作っているだけ。Terraform では `oci_logging_log` を自分で書く。エージェントは要らない。
 - `docker logs <コンテナ名>` と `docker compose logs <サービス名>` は同じログを見る。compose で作ったコンテナの名前は `<プロジェクト>-<サービス>-1` で、`docker compose logs` は `compose.yaml` のあるディレクトリでサービス名から引き、複数のサービスを行頭に名前を付けて混ぜて出す。
 - OCI の Ubuntu のイメージは `/etc/default/netfilter-persistent` で `IPTABLES_RESTORE_NOFLUSH=yes` にしている。`netfilter-persistent reload` は今のルールを消さずに後ろに足すので、古い `REJECT` が先に残り、足した ACCEPT が効かない（`No route to host` になる）。ファイルを直したら `iptables-restore < /etc/iptables/rules.v4`（フラッシュしてから読む）か再起動。`iptables -S` で実際に効いている順番を見る。
-- Postfix は宛先のドメインを「アドレスクラス」に分ける。`mydestination`（Linux のユーザー、配達は `local`）、`virtual_mailbox_domains`（メールだけのユーザー、配達は `virtual`）、それ以外（よそ。配達は `smtp`。中継を許された相手からしか受けない）。知らない宛先は、受け取ってから送り返さず、会話の途中で 550 を返す（送り返すと、偽の差出人へのエラーメールの踏み台になる：バックスキャッター）。
-- 届いたメールのヘッダーは、受け取ったサーバーが上に足していく。`Return-Path:` は封筒の差出人、`X-Original-To:`・`Delivered-To:` は封筒の宛先を、受け取った Postfix が書き残したもの。`Received:` は下から上へ読む。サーバー同士の配送は、受ける側の証明書が自己署名でも TLS で暗号化される（送る側が検証しないため）。
 - メールの基礎（登場人物、封筒と便箋、ポート、SPF・DKIM・DMARC の全体像とアライメント）→ [番外編：メールの仕組み](extra-mail-basics.md)
+- メールサーバーを組みながら分かったこと（Postfix の役割と設定、届いたメールのヘッダー、証明書の役割、ACME と自動更新、Dovecot との分担）→ [番外編：メールサーバーを組む](extra-mail-build.md)
 - サブドメインとパスの振り分けの比較：パスにすると、アプリ全体に base path の設定が要り、Cookie などのオリジンも共有になる。サブドメインなら Origin 証明書 `*.alphajinsei.com` 1枚で足り、方式をまたいで DNS の向け先を変えるだけで移せる。→ [方式検討：OCI](../design/oci.md)
 
 ## 認証情報の一覧

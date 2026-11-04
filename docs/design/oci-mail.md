@@ -2,7 +2,7 @@
 
 最終更新：2026-11-05
 
-[方式検討：OCI](oci.md) の別冊。共通基盤の mail VM に、`alphajinsei.com` のメールの送受信の基盤を作る。仕組みの基礎は [番外編：メールの仕組み](../notes/extra-mail-basics.md)、手順は [学習ロードマップ：OCI](../roadmaps/oci.md) の Step 8。
+[方式検討：OCI](oci.md) の別冊。共通基盤の mail VM に、`alphajinsei.com` のメールの送受信の基盤を作る。仕組みの基礎は [番外編：メールの仕組み](../notes/extra-mail-basics.md)、組みながら分かったことは [番外編：メールサーバーを組む](../notes/extra-mail-build.md)、手順は [学習ロードマップ：OCI](../roadmaps/oci.md) の Step 8。
 
 ## 1. ゴール
 
@@ -122,8 +122,9 @@ Cloudflare に置き、oci-platform の `cloudflare.tf` で Terraform が持つ�
 - **証明書**：Let's Encrypt で `mail.alphajinsei.com` を取り、certbot が自動で更新する。取り方は Step 8-3 で決める。
   - HTTP-01：mail VM の 80番を開け、更新のときだけ certbot が受ける。開けるポートが1つ増える。
   - DNS-01：Cloudflare の API トークン（DNS の編集）を mail VM に置く。トークンはゾーン単位でしか絞れず、mail VM が乗っ取られると DNS 全体を書き換えられる。
-  - 今の考え：HTTP-01（被害の範囲が小さい）。
-- **アカウント**：ユーザーは1人なので、Dovecot のパスワードのファイル（passwd-file）にハッシュで持つ。パスワードは自分で決め（メールソフトに入れるため、覚えておく必要がある）、Vault に入れて Ansible が読む形にする（Step 8-3 で詰める）。
+  - **HTTP-01 にした**（被害の範囲が小さい）。DNS-01 を選ぶのは、ワイルドカードの証明書が要るとき、外から 80番で届かないサーバー（社内のサーバーなど）のとき、多数のサーバーの証明書を1か所でまとめて取るとき。その場合も、トークンを外に公開するサーバーに置かず、取る専用の場所に置くのが定石。
+- **アカウント**：ユーザーは1人なので、Dovecot のパスワードのファイル（passwd-file）にハッシュで持つ。パスワードは DB と同じく Terraform が作って Vault に入れ（`mail-<ユーザー>-password`、`terraform/mail.tf`）、mail VM の Ansible が `platform-secret` で読んで SHA512-CRYPT のハッシュにする。自分は手元の oci CLI で一度だけ取り出し、メールソフトとパスワード管理のツールに入れる。
+- **保存**：Postfix は受け取るだけにし、Dovecot に LMTP で渡す。Dovecot が Maildir に書き、索引も持つ（IMAP が速い。あとで振り分けのルール（Sieve）も足せる）。
 
 ## 8. アプリからの送信
 
@@ -142,7 +143,8 @@ Cloudflare に置き、oci-platform の `cloudflare.tf` で Terraform が持つ�
 | --- | --- |
 | バックアップ | `/srv/mail` を Object Storage に定期的に退避する（ops か mail の cron）。ブートボリュームのバックアップも併用 |
 | 監視 | VM の停止は Step 7 のアラーム。メールの中の異常（キューの詰まり、証明書の期限）は、まずは手で見る |
-| ログ | `journalctl -u postfix` など。送れなかったメールは `postqueue -p` |
+| ログ | `/var/log/mail.log`（Postfix と Dovecot）。送れなかったメールは `postqueue -p` |
+| 証明書 | certbot の systemd のタイマーが1日2回確かめ、期限の30日前から更新する。更新したら deploy フック（`/etc/letsencrypt/renewal-hooks/deploy/reload-mail.sh`）で Postfix と Dovecot を読み直す |
 | DMARC のレポート | `dmarc@` に届く XML を見る。読みやすくする道具は必要になったら |
 | 更新 | 共通基盤の OS の更新（unattended-upgrades と `upgrade.yml`）に乗る |
 
@@ -159,3 +161,5 @@ Cloudflare に置き、oci-platform の `cloudflare.tf` で Terraform が持つ�
 3. **方式：部品を自分で組む（A）**：パッケージやマネージドと比べ、仕組みを理解する目的に合う A にした（3）。
 4. **閲覧はメールソフトから**：IMAP はどの方式でも作る土台で、Webメールはその上の便利さ。Webメールは共通基盤のアプリとして後で足す。
 5. **アプリからの送信は mail VM を通す**：Email Delivery に直接送る案と比べ、出口を1つにする形を学ぶために mail VM を通す（8）。
+6. **証明書は HTTP-01**：DNS-01 は Cloudflare のトークンを外に公開する mail VM に置くことになり、乗っ取られたときに DNS 全体を書き換えられる。80番を開けるだけの HTTP-01 にした（7）。
+7. **メールのパスワードは Terraform → Vault**：DB のパスワードと同じ形。ハッシュを公開リポジトリに置く案は、弱いパスワードだと手元で総当たりされるので見送った（7）。

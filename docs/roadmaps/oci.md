@@ -445,7 +445,7 @@ VM の停止のアラームは、VM を止めて確かめることもできる�
 
 ## Step 8：メールサーバー
 
-`alphajinsei@alphajinsei.com` で送受信できるようにし、アプリからも送れるようにする。方式は部品を自分で組む形（Postfix・Dovecot・Rspamd、送信は Email Delivery に中継）。決めたことは [方式検討：OCI のメール基盤](../design/oci-mail.md)、基礎は [番外編：メールの仕組み](../notes/extra-mail-basics.md)。大きいので6つに分け、各回のコマンドはその回に入るときに書き足す。
+`alphajinsei@alphajinsei.com` で送受信できるようにし、アプリからも送れるようにする。方式は部品を自分で組む形（Postfix・Dovecot・Rspamd、送信は Email Delivery に中継）。決めたことは [方式検討：OCI のメール基盤](../design/oci-mail.md)、基礎は [番外編：メールの仕組み](../notes/extra-mail-basics.md)、組みながら分かったことは [番外編：メールサーバーを組む](../notes/extra-mail-build.md)。大きいので6つに分け、各回のコマンドはその回に入るときに書き足す。
 
 ### 8-1. 基礎
 
@@ -515,9 +515,51 @@ Postfix で `alphajinsei.com` 宛てだけを受け、`/srv/mail/alphajinsei.com
 
 ### 8-3. 閲覧
 
-- [ ] Let's Encrypt の証明書（取り方を決める：HTTP-01 か DNS-01）
-- [ ] Dovecot（IMAP 993番、LMTP での保存、パスワード）。パスワードの置き場を決める
-- [ ] Thunderbird とスマホでつなぎ、8-2 のメールを読む
+Let's Encrypt の証明書を ACME の HTTP-01 で取り（自動更新）、Dovecot で IMAP（993番）を開ける。保存は Postfix から Dovecot に LMTP で渡す形に替える。パスワードは Terraform が作って Vault に入れ、mail VM が読んでハッシュにする（DB のパスワードと同じ形）。
+
+- [x] 80番（HTTP-01）を NSG で開け、メールのパスワードを Vault に作る
+
+  ```bash
+  cd ~/claude-sandbox/oci-platform/terraform
+  ./tf.sh apply
+  ```
+
+- [x] mail に oci CLI、certbot、Dovecot を入れ、Postfix の証明書と保存先を替える
+
+  ```bash
+  cd ../ansible
+  ansible-playbook site.yml --limit mail
+  ```
+
+- [x] 証明書と自動更新を確かめる
+
+  ```bash
+  ssh oci-mail 'sudo certbot certificates'                 # 期限（90日）と鍵の種類
+  ssh oci-mail 'systemctl list-timers certbot.timer'       # 更新のタイマー
+  ssh oci-mail 'sudo certbot renew --dry-run'              # 更新を本番に影響なく試す（Let's Encrypt の試験用の環境）
+  openssl s_client -connect mail.alphajinsei.com:993 -servername mail.alphajinsei.com </dev/null 2>/dev/null | head -12
+  #   手元から。issuer が Let's Encrypt、Verify return code: 0 (ok) なら、メールソフトも警告なしでつながる
+  ```
+
+- [x] パスワードを手元で一度だけ取り出し、パスワード管理のツールに入れる（画面に表示されるので、人に見られない場所で）
+
+  ```bash
+  oci secrets secret-bundle get-secret-bundle-by-name \
+    --vault-id "$(terraform -chdir=../terraform output -raw vault_id)" \
+    --secret-name mail-alphajinsei-password \
+    --query 'data."secret-bundle-content".content' --raw-output | base64 -d; echo
+  ```
+
+- [x] Thunderbird とスマホでつなぎ、8-2 のメールが見えることを確かめる。設定は手動で：
+  - 受信（IMAP）：`mail.alphajinsei.com`、993、SSL/TLS、通常のパスワード、ユーザー名 `alphajinsei@alphajinsei.com`
+  - 送信（SMTP）：`mail.alphajinsei.com`、465、SSL/TLS（8-4 までは送れない。Thunderbird で確認が通らなければ、受信だけ先に作る）
+- [x] Gmail からもう1通送り、メールソフトに届くことを確かめる。`/var/log/mail.log` で、受け渡しが `relay=...[private/dovecot-lmtp]`（Postfix → Dovecot）になっていることを見る
+
+理解ポイント：
+
+- 証明書は「つないだ相手が本物の `mail.alphajinsei.com` か」をメールソフトが確かめるためのもの。確かめられないと、パスワードを偽物に渡しうる。
+- ACME の HTTP-01 の流れ（certbot が 80番で答え、Let's Encrypt が外から確かめに来る）と、更新が自動で回る仕組み（タイマーと deploy フック）。
+- Postfix（受け取り）と Dovecot（保存と閲覧）の役割の分担。
 
 ### 8-4. 送信
 
