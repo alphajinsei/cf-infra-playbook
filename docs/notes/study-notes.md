@@ -172,6 +172,11 @@
 - `ssh host bash -s < script.sh` でスクリプトを流し込むと、途中で標準入力を読むコマンド（`docker compose run`、`ssh` など）が、スクリプトの残りを食べてしまう。bash は入力が尽きたと見て、エラーなしで終わる。スクリプトは先にファイルで送って実行するか、そのコマンドに `-T` や `< /dev/null` を付ける。
 - MySQL には `RETURNING` がない。Drizzle では、挿入した行の ID を `$returningId()` で受け取る。
 - `docker compose` は `compose.override.yaml` を自動で重ねる。手元だけの MySQL や接続情報をそこに書き、本番には送らない。
+- OCI のアラームは、メトリクスの系列（ディメンションの組み合わせ）ごとに判定する。`groupBy(backendSetName)` のように書けば、バックエンド・セット（＝アプリ）が増えてもアラーム1つで全部を見られ、`is_notifications_per_metric_dimension_enabled` で系列ごとに別のメールになる。
+- 閾値のアラーム（CPU > 80 など）は、VM が止まるとデータが来なくなり、何も言わなくなる。止まったことは `absent()`（一定時間メトリクスが届かないと 1 になる）のアラームで知る。VM の CPU やメモリのメトリクスは、Ubuntu のイメージにも入っている Oracle Cloud Agent が送る。
+- 監視は「打つ手があるもの」に絞る。Always Free では拡張の余力がないので、CPU の高騰は見ず、止まったこと（アプリと VM）だけを通知する。
+- LB のアクセスログとエラーログは、既定では記録されない。Logging の「ログ」（ソースが LB のサービス・ログ）を作ると記録が始まる。コンソールの LB 作成ウィザードの「ロギングの管理」は、これを裏で作っているだけ。Terraform では `oci_logging_log` を自分で書く。エージェントは要らない。
+- `docker logs <コンテナ名>` と `docker compose logs <サービス名>` は同じログを見る。compose で作ったコンテナの名前は `<プロジェクト>-<サービス>-1` で、`docker compose logs` は `compose.yaml` のあるディレクトリでサービス名から引き、複数のサービスを行頭に名前を付けて混ぜて出す。
 - サブドメインとパスの振り分けの比較：パスにすると、アプリ全体に base path の設定が要り、Cookie などのオリジンも共有になる。サブドメインなら Origin 証明書 `*.alphajinsei.com` 1枚で足り、方式をまたいで DNS の向け先を変えるだけで移せる。→ [方式検討：OCI](../design/oci.md)
 
 ## 認証情報の一覧

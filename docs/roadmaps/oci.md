@@ -1,6 +1,6 @@
 # 学習ロードマップ：OCI 共通基盤（方式③）
 
-最終更新：2026-11-03
+最終更新：2026-11-04
 
 ## ゴール
 
@@ -26,7 +26,7 @@
 | 4 | DB と Vault | HeatWave、Vault、インスタンス・プリンシパル |
 | 5 | LB と公開 | Flexible LB、Origin 証明書、Cloudflare の DNS を Terraform で |
 | 6 | サンプルアプリ | Docker、VM の上でのビルド、Vault からのパスワードの受け渡し、デプロイのスクリプト |
-| 7 | 運用 | Monitoring、Notifications、Logging、OS の自動更新 |
+| 7 | 運用 | Monitoring（停止のアラーム）、Notifications、Logging（LB のログ） |
 | 8 | メールサーバー | Postfix / Dovecot、Email Delivery への中継、SPF・DKIM・DMARC |
 | 9 | 仕上げ | 共通基盤の仕様、README、サービス開発ガイドの③の行 |
 
@@ -420,9 +420,28 @@ curl -s https://oci-platform.alphajinsei.com       # 共通基盤の既定のペ
 
 ## Step 7：運用
 
-- [ ] アラーム（LB の異常なバックエンド、CPU・メモリ、HeatWave のストレージ）とメール通知
-- [ ] コンテナのログの見方を決める（`docker logs` か、OCI Logging に送るか）
-- [ ] app のコンテナを止めて、通知が来ることを確かめる
+アラームは「止まった」ことの2つだけ（アプリと VM）。ログは LB のものだけ OCI Logging に入れ、コンテナのログは `docker compose logs` で見る（[方式検討の 11](../design/oci.md#11-運用)）。OS の自動更新は Step 3 で入れ済み。
+
+- [x] 通知のトピックとメールの購読、アラーム2つ、LB のログを作る（`terraform/monitoring.tf`）
+
+  ```bash
+  cd ~/claude-sandbox/oci-platform/terraform
+  ./tf.sh apply
+  ```
+
+- [x] 届いた確認メール（件名に「OCI Notifications Service Subscription Confirmation」）のリンクを押す。押すまで通知は届かない
+- [x] app のコンテナを止めて、3〜4分でアラームのメールが来ることを確かめる。戻して、OK のメールが来ることも確かめる
+
+  ```bash
+  ssh oci-app 'cd /opt/apps/sample-oci-vm-docker && docker compose stop app'
+  # メールが来たら
+  ssh oci-app 'cd /opt/apps/sample-oci-vm-docker && docker compose start app'
+  ```
+
+- [x] LB のログを見る：コンソールの「監視およびマネジメント → ロギング → ログ」で `lb-access` を開き、さっきの 502 と、その後の 200 が残っていることを確かめる
+- [x] コンテナのログを見る：`ssh oci-app 'cd /opt/apps/sample-oci-vm-docker && docker compose logs --tail 50 app'`
+
+VM の停止のアラームは、VM を止めて確かめることもできる（ops を止めると10分ほどで来る）。止めるのは任意。
 
 ## Step 8：メールサーバー
 
