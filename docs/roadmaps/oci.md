@@ -1,6 +1,6 @@
 # 学習ロードマップ：OCI 共通基盤（方式③）
 
-最終更新：2026-11-04
+最終更新：2026-11-05
 
 ## ゴール
 
@@ -27,7 +27,7 @@
 | 5 | LB と公開 | Flexible LB、Origin 証明書、Cloudflare の DNS を Terraform で |
 | 6 | サンプルアプリ | Docker、VM の上でのビルド、Vault からのパスワードの受け渡し、デプロイのスクリプト |
 | 7 | 運用 | Monitoring（停止のアラーム）、Notifications、Logging（LB のログ） |
-| 8 | メールサーバー | Postfix / Dovecot、Email Delivery への中継、SPF・DKIM・DMARC |
+| 8 | メールサーバー | メールの仕組み、Postfix / Dovecot / Rspamd、Email Delivery への中継、SPF・DKIM・DMARC、アプリからの送信 |
 | 9 | 仕上げ | 共通基盤の仕様、README、サービス開発ガイドの③の行 |
 
 ---
@@ -445,9 +445,97 @@ VM の停止のアラームは、VM を止めて確かめることもできる�
 
 ## Step 8：メールサーバー
 
-- [ ] 予約パブリック IP の料金と、逆引き（PTR）の設定可否を調べる
-- [ ] Postfix / Dovecot を Ansible で入れ、Email Delivery に中継する
-- [ ] MX、SPF、DKIM、DMARC を Cloudflare に置き、Gmail と送受信できることを確かめる
+`alphajinsei@alphajinsei.com` で送受信できるようにし、アプリからも送れるようにする。方式は部品を自分で組む形（Postfix・Dovecot・Rspamd、送信は Email Delivery に中継）。決めたことは [方式検討：OCI のメール基盤](../design/oci-mail.md)、基礎は [番外編：メールの仕組み](../notes/extra-mail-basics.md)。大きいので6つに分け、各回のコマンドはその回に入るときに書き足す。
+
+### 8-1. 基礎
+
+- [x] [番外編：メールの仕組み](../notes/extra-mail-basics.md) を読む
+- [x] DNS を引いてみる：MX（配送先）、SPF、DMARC がどう書かれているか
+
+  ```bash
+  dig +short MX gmail.com
+  dig +short TXT gmail.com | grep spf
+  dig +short TXT _dmarc.gmail.com
+  dig +short MX alphajinsei.com       # まだ何も返らない
+  ```
+
+- [x] Gmail で受け取ったメール（会社や通販などのもの）の「メッセージのソースを表示」を開き、3つの差出人（`Return-Path:`、`DKIM-Signature:` の `d=`、`From:`）と `Authentication-Results:` を見比べる。どれが一致して DMARC が通っているか
+
+理解ポイント：
+
+- サーバー同士の 25番と、メールソフトからの 465・587番の違い。
+- SPF・DKIM・DMARC が、それぞれどの差出人を確かめているか。DMARC のアライメントとは何か。
+
+### 8-2. 受信
+
+Postfix で `alphajinsei.com` 宛てだけを受け、`/srv/mail/alphajinsei.com/alphajinsei/Maildir/` に1通1ファイルで保存する。メールのユーザーは Linux のユーザーにしない（virtual。持ち主は `vmail` の1人）。TLS は仮に自己署名（snakeoil）で、8-3 で Let's Encrypt に替える。外へはまだ送れない。
+
+- [x] DNS（`mail.alphajinsei.com` の A と、`alphajinsei.com` の MX）を置く。どちらもプロキシしない
+
+  ```bash
+  cd ~/claude-sandbox/oci-platform/terraform
+  ./tf.sh apply
+  dig +short MX alphajinsei.com
+  dig +short A mail.alphajinsei.com
+  ```
+
+- [x] Postfix を入れる（mail に `roles/mail`、ops に swaks）
+
+  ```bash
+  cd ~/claude-sandbox/oci-platform/ansible
+  ansible-playbook site.yml --limit mail,ops
+  ssh oci-mail 'sudo postconf -n'      # 効いている設定（既定から変えたものだけ）
+  ```
+
+- [x] ops から mail に、手で SMTP を話す（swaks は会話を全部表示する。`<~` が相手、`~>` が自分）。ops は Postfix から見ると「よその人」
+
+  ```bash
+  ssh oci-ops
+  swaks --server 10.0.1.10 --to alphajinsei@alphajinsei.com --from test@example.com   # 250：受け取る
+  swaks --server 10.0.1.10 --to nobody@alphajinsei.com --from test@example.com        # 550：知らない宛先は拒否
+  swaks --server 10.0.1.10 --to someone@gmail.com --from test@example.com             # 454/554 Relay access denied：よそ宛ては中継しない
+  ```
+
+- [x] Gmail から `alphajinsei@alphajinsei.com` に送り、mail VM の上で読む
+
+  ```bash
+  ssh oci-mail
+  sudo tail -f /var/log/mail.log                                   # 受け取りのログ（from=、to=、status=sent）
+  sudo ls /srv/mail/alphajinsei.com/alphajinsei/Maildir/new/       # 1通1ファイル
+  sudo cat /srv/mail/alphajinsei.com/alphajinsei/Maildir/new/<ファイル名>
+  ```
+
+  ヘッダーの `Received:`（どのサーバーを通ったか。上が新しい）と、Gmail が付けた `DKIM-Signature:` を見る。
+
+理解ポイント：
+
+- `mydestination`（Linux のユーザー宛て）と `virtual_mailbox_domains`（メールだけのユーザー宛て）の違い。
+- オープンリレーにしない仕組み（`smtpd_relay_restrictions`）。ops からの 3つ目が拒否される理由。
+- MX と A の関係。Gmail は `alphajinsei.com` の MX を引き、その名前の A を引いて、25番につなぐ。
+
+### 8-3. 閲覧
+
+- [ ] Let's Encrypt の証明書（取り方を決める：HTTP-01 か DNS-01）
+- [ ] Dovecot（IMAP 993番、LMTP での保存、パスワード）。パスワードの置き場を決める
+- [ ] Thunderbird とスマホでつなぎ、8-2 のメールを読む
+
+### 8-4. 送信
+
+- [ ] Email Delivery：承認済みの差出人、SMTP の資格情報（Vault へ）、Email Domain（DKIM、カスタム Return-Path）
+- [ ] Postfix の 465・587番（Dovecot でログイン）と、Email Delivery への中継
+- [ ] SPF・DKIM・DMARC（`p=none`）を Terraform で置く。DKIM を誰が署名するかを決める
+- [ ] Gmail に送り、`Authentication-Results:` で SPF・DKIM・DMARC が全部 pass になることを確かめる
+
+### 8-5. 守り
+
+- [ ] Rspamd（受け取ったメールの判定）と fail2ban
+- [ ] `/srv/mail` のバックアップ（Object Storage へ）
+- [ ] DMARC のレポートを読む。`p=quarantine` に上げる
+
+### 8-6. アプリから
+
+- [ ] 認証の方式を決める（送信元の IP で信頼するか、アプリごとのパスワードか）
+- [ ] サンプルから `noreply@alphajinsei.com` で送り、Gmail で受け取る
 
 ## Step 9：仕上げ
 
