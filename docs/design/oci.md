@@ -1,6 +1,6 @@
 # 個人サービス公開インフラ 方式検討：OCI（方式③）
 
-最終更新：2026-11-03
+最終更新：2026-11-04
 
 OCI の Always Free の範囲で、LB・サーバー・DB のそろった「いわゆる3層」の共通基盤を作り、その上にコンテナでアプリを載せる。メールサーバーのように VM 単体で動かしたいものも、同じ VCN に置く。要件と方式の一覧は [全体](overview.md)。
 
@@ -173,14 +173,49 @@ NSG は、VM や LB など、リソース単位にかけるファイアウォー
 Client --HTTPS--> Cloudflare edge --HTTPS (Origin CA cert, verified)--> OCI LB :443 --HTTP--> app :8000-8099
 ```
 
-- Cloudflare の暗号化モードは Full (strict)。Cloudflare → LB も HTTPS で、Origin 証明書を検証する。Flexible（Cloudflare → オリジンが HTTP）は使わない。
+- Cloudflare の暗号化モードは Full (strict)。Cloudflare → LB も HTTPS で、Origin 証明書を検証する。
 - TLS は LB で終わり、LB → アプリは VCN の中の HTTP。アプリは TLS を持たない。
-- LB が受けるのは 443番だけ。http → https の転送は Cloudflare の「Always Use HTTPS」がエッジで行う。
-- 暗号化モードはゾーン全体の設定。Workers と Pages はエッジで動くので影響を受けない。
+- LB が受けるのは 443番だけ。Cloudflare は利用者と同じプロトコルでオリジンにつなぐ（http なら 80番）ので、http → https の転送は Cloudflare の「Always Use HTTPS」がエッジで行う。
+- 暗号化モードはゾーン全体の設定。Workers と Pages はエッジで動き、Cloudflare → オリジンの区間がないので影響を受けない。ほかのホスト名と分けたくなったら、Configuration Rules でホスト名ごとに上書きできる（Free プランでも使える）。
+- LB のリスナーは TLS 1.2 だけにした。OCI の LB の既定の暗号スイートが TLS 1.2 用で、1.3 を足すには暗号スイートの指定も替える必要がある。利用者 → Cloudflare の区間は Cloudflare が TLS 1.3 とハイブリッドの PQC 鍵交換を受け持つので、この区間を 1.3・PQC に上げるのは、基盤を回す中で試す題材として残す。
+
+#### 案の比較
+
+暗号化モードが決めるのは Cloudflare → オリジンの区間だけ。利用者 → Cloudflare は、どの案でも Cloudflare のエッジ証明書（自動で発行・更新）による HTTPS。
+
+| 案 | Cloudflare → OCI | オリジンの証明書 | 残るリスク | 初期の手間 |
+| --- | --- | --- | --- | --- |
+| Flexible | HTTP（平文） | なし | インターネットの上を平文で流れる（認証基盤のパスワードや Cookie も）。アプリが http と見て https へ転送し、ループする罠がある | 小（LB に 80番） |
+| Full + 自己署名 | HTTPS・相手を検証しない | 自己署名 | 経路で割り込まれても気付かない。DNS の IP の間違いや、LB を作り直して手放した IP が他人に渡ったときも、黙ってそこにつなぐ | 小（Origin 証明書と変わらない） |
+| Full + Origin 証明書 | HTTPS・相手を検証しない | Origin 証明書 | 同上 | 小 |
+| **Full (strict) + Origin 証明書** | HTTPS・相手を検証する | Origin 証明書 | 上の2つは、エラー（526）で止まる。証明書の秘密鍵が漏れると、なりすましに使える | 小（上 + モードの切り替え） |
+| プロキシなし（DNS だけ） | （Cloudflare を通らない） | 公的に信頼される証明書（Let's Encrypt など） | LB が全世界に公開され、IP も知られる。WAF・DDoS 対策・キャッシュがない。更新が止まるとサイトが落ちる | 大（ACME の仕組み、LB の証明書の差し替えの自動化、80番の転送） |
+
+- Full と Full (strict) は、手間がほぼ同じで、Workers・Pages への影響もないので、strict にした。
+- プロキシの形そのものに残るリスク：Cloudflare は中身を平文で見る。NSG で Cloudflare の IP に絞っても、ほかの Cloudflare 利用者が自分のゾーンをこちらの IP に向ければ、Cloudflare 経由で届く。防ぐなら Authenticated Origin Pulls（Cloudflare → オリジンの mTLS）。後で試す題材として残す。
+- プロキシにした理由：①②と入口がそろう（DNS の向け先を変えるだけで方式をまたいで移せる）、WAF・DDoS 対策・キャッシュが無料で付く、LB の IP を隠して NSG で絞れる、証明書の更新を考えなくてよい。
+
+#### Origin 証明書とは
+
+| | Cloudflare Origin 証明書 | 公的な証明書（Let's Encrypt、商用の CA） | OCI Certificates（プライベート CA） |
+| --- | --- | --- | --- |
+| 発行する CA | Cloudflare の Origin CA | ブラウザや OS が信頼する CA | 自分で OCI に作る CA |
+| 信頼するのは | Cloudflare のエッジだけ | 誰でも（ブラウザ・OS・curl） | その CA を入れた相手だけ |
+| 有効期限 | 7日〜15年から選ぶ | 業界のルール（CA/Browser Forum）で上限がある。2026年3月から200日、2027年3月から100日、2029年3月から47日。Let's Encrypt は90日 | 自分で決める。OCI が自動で更新できる |
+| 料金 | 無料 | Let's Encrypt は無料、商用は有料 | Always Free で CA 5つ・証明書150 |
+| Full (strict) で使えるか | 使える | 使える | 使えない（有料の機能でオリジンの信頼ストアを足さない限り） |
+
+- 有効期限の短縮は、ブラウザが信頼する公的な証明書のルール。Origin 証明書は公的な CA が出すものではなく、Cloudflare だけが信頼する私的な証明書なので、ルールの外にあり、15年で作れる。
+- そのかわり、ブラウザに直接見せると警告が出る。プロキシ（オレンジの雲）を外すと、HTTPS も通らなくなる。
+- 期限が長いぶん、秘密鍵が漏れたときの影響も長く続く。漏れたら Cloudflare のダッシュボードで失効させ、作り直す。
+- 1枚で `alphajinsei.com` と `*.alphajinsei.com`（1階層）をまかなえる。
+- 発行は手で行う（Cloudflare のダッシュボード → SSL/TLS → オリジンサーバー）。15年に一度の作業で、仕組みが見える方を選んだ。
+- OCI には、ブラウザが信頼する証明書を発行する機能はない（AWS の ACM に当たるものがない）。OCI Certificates は、プライベート CA での発行と、外で作った証明書の取り込み（期限の管理だけ。自動更新はしない）を受け持つ。
 
 ### LB から先：アプリごとにポートとバックエンド・セット
 
-- アプリごとに、Docker ホストのポートを1つ決める（`aaa` → `:8001`、`bbb` → `:8002`）。ポートは共通基盤の README に台帳を置く。
+- アプリごとに、Docker ホストのポートを1つ決める（`aaa` → `:8001`、`bbb` → `:8002`）。ポートは共通基盤の README に台帳を置く。8000 番は共通基盤の既定のページ（どのアプリにも当たらないホスト名の行き先で、LB のヘルスチェックの相手にもなる）。
+- LB の 443 番には、ホスト名を持たない既定のリスナー（共通基盤）と、ホスト名付きのアプリのリスナー（各アプリのリポジトリの Terraform）が並ぶ。
 - LB には、アプリごとに「仮想ホスト名 + リスナー + バックエンド・セット（ヘルスチェック付き）」を作る。LB がアプリ単位で死活を見る。
 - 比べた案：各 VM に Traefik などのリバースプロキシを置いて、Host ヘッダーでコンテナに振り分ける（Kubernetes の Ingress 風）。アプリを足すときに LB を触らずに済むが、LB のヘルスチェックはプロキシしか見ない。Docker ホストを2台に戻したとき、片方のアプリだけが死んでも LB が気付かない。LB をアプリの振り分けに使い切るほうを選んだ。
 - Kubernetes の Deployment のような「台数の保証」はない。コンテナの再起動は Docker の `restart: unless-stopped` に任せ、止まったことは LB のヘルスチェックのアラームで知る。
@@ -200,6 +235,7 @@ Client --HTTPS--> Cloudflare edge --HTTPS (Origin CA cert, verified)--> OCI LB :
 - **結論：標準の DB は MySQL HeatWave。** ADB と NoSQL は「そのアプリに合うときだけ、アプリ側で足す」選択肢として残す。要件が変わったら考え直す。
 - PostgreSQL は Always Free にない（OCI Database with PostgreSQL は有料）。
 - 作ってみて分かったこと：バックアップの設定は Always Free では指定できず、既定（有効、保存1日）になる。HeatWave は VNIC の作成と NSG への参加を DB システム自身の権限で行うので、そのためのポリシー（`request.principal.type='mysqldbsystem'`）が要る。作成時の版は 26.10.0（手元の開発用の MySQL コンテナはこれに合わせる）。
+- 版は作ったときの既定のままにし、上げるのは OCI のメンテナンスに任せる（Terraform では版の差分を無視する）。データを持つので、削除保護を付け、`terraform destroy` や手違いで消えないようにする。
 - アプリごとに、スキーマと DB ユーザーを1組作る（D1 の「アプリごとに DB」に当たる）。
 
 ## 7. SSH と構成管理
@@ -208,17 +244,25 @@ Client --HTTPS--> Cloudflare edge --HTTPS (Origin CA cert, verified)--> OCI LB :
 
 | 道具 | 管理するもの | 実行する場所 |
 | --- | --- | --- |
-| Terraform（OCI provider、Cloudflare provider） | OCI のリソースすべて（VCN、NSG、VM、ボリュームのアタッチ、LB、HeatWave、Bastion、Vault、監視、予算）と Cloudflare の DNS レコード | 手元の WSL |
+| Terraform（OCI provider、Cloudflare provider） | OCI のリソースすべて（VCN、NSG、VM、ボリュームのアタッチ、LB、HeatWave、Bastion、Vault、監視、予算）と、自分が作った Cloudflare の DNS レコードだけ | 手元の WSL |
+| 手（Cloudflare のダッシュボード） | Cloudflare のゾーンとアカウントの設定：暗号化モード、Always Use HTTPS、Origin 証明書の発行、API トークン、メールのレコード | — |
 | Ansible | VM の中：パッケージと OS の更新の設定、iptables、Docker、swap、メールサーバーの設定。手で流す更新（`upgrade.yml`） | 手元の WSL（Bastion 経由の ssh） |
 | デプロイのスクリプト | アプリのコンテナの入れ替え、マイグレーション | 手元の WSL（`npm run deploy`） |
 
 - **state は OCI Object Storage に置く。** Terraform の公式の `oci` backend を使う（ロックあり。S3 互換の方法は非推奨）。バケットだけは最初に CLI で手作りし、バージョニングを有効にする（R2 のときと同じ「鶏と卵」）。キーは `<リポジトリ名>/terraform.tfstate`。
+- **Cloudflare は、ゾーンの設定は手、レコードはそれを使うアプリの道具が持つ。**
+  - Terraform が Cloudflare で触るのは DNS レコードだけ。リポジトリの中でも `cloudflare.tf` に分け、OCI ではない場所を触っている箇所が見て分かるようにする。トークンの権限も Zone Read と DNS Edit だけにする（共通基盤とアプリで共用）。
+  - 共通基盤は確認用の `oci-platform.alphajinsei.com` だけを持つ。アプリのレコード（`<名前>.alphajinsei.com`）は、そのアプリのリポジトリの Terraform が、LB のリスナーやバックエンド・セットと一緒に持つ。②で wrangler が Worker の独自ドメインのレコードを作るのと同じく、「アプリを出す道具が、そのアプリのレコードを持つ」。ゾーン全体を1つの Terraform で管理するのではない。
+  - Terraform が作ったレコードには、コメントに `managed by Terraform: <リポジトリ名>` を入れ、ダッシュボードで持ち主が分かるようにする。
+  - 比べた案：全部を手で持つと、アプリを足すたびに手作業が残り、デプロイを Claude に任せにくい。ワイルドカード（`*.alphajinsei.com` → LB）にすると追加の作業がなくなるが、レコードを作り忘れたホスト名が黙って OCI に流れ、行き先が暗黙に決まる。Cloudflare 公式の CLI `cf`（beta）でもレコードは作れるが、③のアプリはどのみち LB の設定を Terraform で書くので、同じ場所に置いた。Wrangler には任意の DNS レコードを作る機能がない。
 - **Ansible を使う。** VM が ops・app・mail の3種類あり、ボリュームのマウント、メールの設定、OS の更新、脆弱性への対応など、VM の中の作業を続けて回すため。cloud-init は使わず、VM の中の設定は Ansible に寄せる。
 
 ### SSH は Bastion
 
 - Bastion は OCI が持つ踏み台。「この鍵で、この VM の 22 番に、最長3時間」というセッションを作り、その間だけ通れる。VM に公開 IP も、外に開いたポートも要らない。
-- 手間を減らすため、ラッパーのスクリプト（例：`bin/oci-ssh`）を作る。使えるセッションが残っていればそれを使い、なければ作って待ち（1分ほど）、ssh の設定を書き換える。`ssh oci-app` のように入れ、Ansible とデプロイのスクリプトも中でこれを使う。
+- 手間を減らすため、ラッパーのスクリプト `bin/bastion-proxy` を置く。Terraform が書き出す `ssh_config` の ProxyCommand から呼ばれ、使えるセッション（同じ宛先・同じ鍵で、残り15分以上）があればそれを使い、なければ作って ACTIVE を待つ（1分ほど）。最後に `ssh -W` で Bastion を通す。`ssh oci-app` のように入れ、Ansible とデプロイのスクリプトも同じ経路を通る。仕組みと手でつなぐ手順は [番外編：Bastion](../notes/extra-oci-bastion.md)。
+- Bastion への接続に使う鍵は RSA にする（Bastion は RSA しか受け付けない。ed25519 でもセッションは作れてしまい、接続で拒否される）。VM へのログインの鍵は ed25519 のまま、2つを使い分ける。
+- Bastion への接続元は絞らない（0.0.0.0/0）。セッションを作るには OCI の認証が要り、さらに Bastion の鍵と VM の鍵が要る、の3重で守る。自宅の IP に絞ると、IP が変わるたびに直す手間がかかり、外出先からも入れなくなる。
 - 非常口：OCI のコンソールからのコンソール接続（シリアルコンソール）。ネットワークを通らずに VM に入れる。
 - 手で入る場面は少ない。デプロイ（毎回、ただしスクリプトが入る）、`docker logs` などの調べもの（たまに）、OS の更新（自動にする）。
 
@@ -228,7 +272,7 @@ Client --HTTPS--> Cloudflare edge --HTTPS (Origin CA cert, verified)--> OCI LB :
 
 ```
 Dev PC (WSL)
-  docker compose up        app + mysql:8.4 container (same version as HeatWave)
+  docker compose up        app + mysql container (same version as HeatWave, 26.10)
   npm run deploy
     1. docker buildx build --platform linux/arm64 -> push to OCIR (tag = git SHA)
     2. ssh app (via Bastion): pull -> migrate (docker compose run --rm app migrate)
@@ -249,7 +293,7 @@ Dev PC (WSL)
 ```
 ~/claude-sandbox/
 ├── oci-platform/            platform: VCN, NSG, LB, VMs, HeatWave, Bastion, Vault,
-│                            monitoring, budget (Terraform) + Ansible + bin/oci-ssh
+│                            monitoring, budget (Terraform) + Ansible + bin/bastion-proxy
 └── sample-oci-vm-docker/    app: code, Dockerfile, compose.yaml, deploy script,
                              small Terraform (LB listener + backend set, DNS record,
                              bucket) reading platform outputs via terraform_remote_state
@@ -309,7 +353,7 @@ Dev PC (WSL)
 
 | もの | 使い方 |
 | --- | --- |
-| Vault | DB のパスワード、OCIR のトークン。VM はインスタンス・プリンシパルで取りに行く（手元にも VM のディスクにも置かない） |
+| Vault | DB のパスワード、OCIR のトークン。VM はインスタンス・プリンシパルで取りに行く（手元にも VM のディスクにも置かない）。Vault は DEFAULT 型（無料）、鍵はソフトウェアの鍵（無料）にした。専用の区画を持つ仮想プライベート Vault は有料。Vault は消すと復元の猶予の後に戻せないので、Terraform で `prevent_destroy` を付ける。HeatWave の管理者のパスワードは Terraform が作って Vault に入れるので、値は state にも残る（state は非公開のバケットにある） |
 | Monitoring + Notifications | アラーム：LB の異常なバックエンドが1つ以上、VM の CPU・メモリ、HeatWave のストレージ。通知はメール |
 | Budget | 予算アラート（金額が0円を超えたら通知）。枠を超えて課金されたことに気付くため |
 | OS の更新（自動） | unattended-upgrades でセキュリティの更新だけ毎日入れる。**自動で再起動しない。Docker 本体は対象外**。needrestart にも Docker を再起動させない。Docker は `live-restore` で、デーモンが再起動してもコンテナを止めない。これで、勝手にコンテナが止まることはない |
@@ -329,6 +373,7 @@ Dev PC (WSL)
 
 - OCI の公開 IP の逆引き（PTR）を設定できるか
 - LB のリスナーと仮想ホスト名で、アプリ16個を独立したリソースとして足せるか
+- 予約パブリック IP の料金。今は LB の公開 IP を予約せず、作ってから DNS に設定する。LB を作り直すと IP が変わるので、そのときは DNS を直す（Full (strict) なので、直し忘れても他人の IP に黙ってつなぐことはない）
 
 ## 13. 検討の経緯
 
@@ -343,3 +388,5 @@ Dev PC (WSL)
 9. **mail のデータ：ブロックボリューム → ブートボリューム**：ブロックボリュームは最小 50GB で、ディスクの枠の残りが 9GB になる。メールにそこまで要らず、あとから移すのも難しくないので、ブートボリュームの `/srv/mail` に置き、枠を 59GB 残した（3）。
 10. **自動更新**：コンテナが勝手に止まるのを避けたい。自動はセキュリティの更新だけにし、再起動と Docker 本体の更新は手で流す1コマンド（`upgrade.yml`）にした（11）。
 11. **作業用の VM**：既存のマイクロ2台（2023年に勉強で作ったもの）は、ブートボリュームのバックアップを取ってから消す。残すものを調べる手間を、必要になったときに先送りできる。作業用の VM は、新しい VCN に作り直す（ops）。
+12. **Cloudflare → LB の暗号化：Full (strict)**：個人サイトなので、HTTP（Flexible）や自己署名（Full）でも許せると考えた。しかし Full (strict) にしても手間はほぼ変わらず、Workers・Pages への影響もない。Full では、IP の間違いや、手放した IP が他人に渡ったときにも、黙ってそこにつないでしまう。そこで strict にした。プロキシをやめて Let's Encrypt を LB に置く案は、更新の仕組みを自分で持つ手間と、LB を全世界に公開することから見送った（5）。
+13. **Cloudflare の設定の持ち方：Terraform で全部 → ゾーンの設定は手、レコードはアプリの Terraform**：最初は Origin 証明書の発行も DNS も Terraform で持つつもりだった。しかし DNS の大部分は手で作ってきており、②では wrangler もレコードを作るので、持ち主が3つに分かれて見通しが悪い。ゾーンとアカウントの設定（証明書を含む）は手にし、Terraform は自分のレコードだけを `cloudflare.tf` で持つ形にした。ワイルドカードと `cf` も比べた（7）。

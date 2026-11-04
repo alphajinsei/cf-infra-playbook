@@ -305,14 +305,57 @@ mysql -h mysql.db.platform.oraclevcn.com -u admin -p"$PW" -e 'SELECT VERSION();'
 
 ## Step 5：LB と公開
 
-- [ ] Cloudflare の SSL/TLS の暗号化モードを確かめる。Cloudflare → LB を HTTPS にして証明書も検証する Full (strict) にする（ゾーン全体か、③のホスト名だけを Configuration Rule で）。Flexible のままだと、LB の 80番に HTTP でつなぎに行って失敗する
-- [ ] Cloudflare の Origin 証明書（`*.alphajinsei.com`）を作り、OCI の LB に入れる
-- [ ] LB を作る。nsg-lb で Cloudflare の IP 範囲だけを受ける
-- [ ] 仮のコンテナ（nginx など）を1つ置き、サブドメインから見えるところまで
+コードは `oci-platform/terraform/lb.tf`（LB、Origin 証明書の読み込み、既定のバックエンド・セットとリスナー）、`terraform/cloudflare.tf`（確認用の DNS レコード。Cloudflare を触るのはこのファイルだけ）、`ansible/roles/default_site`（app の 8000 番に、どのアプリにも当たらないホスト名のための小さなページ）。Cloudflare のゾーンとアカウントの設定は手で行い、Terraform は DNS レコードだけを持つ。この Step から、terraform は `./tf.sh` から実行する（Cloudflare の API トークンを読み込むため）。
+
+- [x] Always Use HTTPS を有効にする（SSL/TLS → エッジ証明書）。LB は 443番しか受けないので、http はエッジで https に転送させる
+- [x] 暗号化モードを **Full (strict)** にする（SSL/TLS → 概要）。今は Full。DNS の一覧でプロキシしているのは Workers と Pages だけで、どちらも影響しないことは確認済み
+- [x] Origin 証明書を発行する（SSL/TLS → オリジンサーバー → 証明書を作成）。「Cloudflare で秘密キーと CSR を生成する」、キーの種類は RSA (2048)、ホスト名は `*.alphajinsei.com` と `alphajinsei.com`（既定のまま）、有効期間は15年、形式は PEM。**秘密鍵はこの画面でしか表示されない**ので、閉じる前に `.secrets` に置く（Claude は読まない）
+
+```bash
+cat > ~/claude-sandbox/infra/.secrets/oci-platform-origin.pem   # 「オリジン証明書」を貼り付けて Ctrl+D
+cat > ~/claude-sandbox/infra/.secrets/oci-platform-origin.key   # 「秘密キー」を貼り付けて Ctrl+D
+chmod 600 ~/claude-sandbox/infra/.secrets/oci-platform-origin.*
+openssl x509 -in ~/claude-sandbox/infra/.secrets/oci-platform-origin.pem -noout -subject -issuer -enddate   # 発行者が Cloudflare、期限が15年後
+```
+
+- [x] Terraform 用の Cloudflare の API トークンを作る（My Profile → API Tokens → Create Token → Custom token）。名前は `terraform-oci-dns`、権限は「Zone / Zone / Read」「Zone / DNS / Edit」、対象のゾーンは alphajinsei.com だけ。共通基盤とアプリの Terraform で共用する
+
+```bash
+cat > ~/claude-sandbox/infra/.secrets/terraform-oci-dns.env   # 貼り付けて Ctrl+D
+# 中身は1行：CLOUDFLARE_API_TOKEN=<トークン>
+chmod 600 ~/claude-sandbox/infra/.secrets/terraform-oci-dns.env
+```
+
+- [x] app に既定のページ（nginx、8000番）を置き、VM の中で見えることを確かめる
+
+```bash
+cd ~/claude-sandbox/oci-platform/ansible
+ansible-playbook site.yml
+ssh oci-app curl -s localhost:8000
+```
+
+- [x] LB・証明書・確認用の DNS レコード（`oci-platform.alphajinsei.com`）を作る
+
+```bash
+cd ~/claude-sandbox/oci-platform/terraform
+./tf.sh init          # cloudflare の provider が増えたので
+./tf.sh plan
+./tf.sh apply         # LB の作成に数分かかる
+```
+
+- [x] 外から見えることと、LB を直接たたけないことを確かめる。コンソールの LB の画面で、バックエンド・セット `default` のヘルスが OK になっていることも見る
+
+```bash
+curl -s https://oci-platform.alphajinsei.com            # 既定のページが返る
+curl -sI http://oci-platform.alphajinsei.com | head -3  # 301 で https に転送される
+LB_IP=$(./tf.sh output -json lb | jq -r .public_ip)
+curl -sk --max-time 5 https://$LB_IP || echo "blocked"  # Cloudflare 以外からは NSG で落とされる
+```
 
 理解ポイント：
 
-- Cloudflare → LB → app の各区間で、TLS はどこで終わり、どこからまた始まるか。
+- Cloudflare → LB → app の各区間で、TLS はどこで終わり、どこからまた始まるか。どの区間で、どの証明書を使っているか。
+- LB の IP を直接たたくと、なぜ届かないか。
 
 ## Step 6：サンプルアプリ
 

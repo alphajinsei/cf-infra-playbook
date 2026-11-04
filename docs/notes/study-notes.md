@@ -151,6 +151,16 @@
 - OCI が塞いでいるのは外へ出す 25 番だけ。自前のメールサーバーは、受信は 25 番で直接受け、送信は Email Delivery に 587 番で中継すると、申請も IP の評判の問題も避けられる。
 - Cloudflare の DNS でプロキシ（オレンジの雲）を有効にすると、名前解決で返るのは Cloudflare のエッジの IP になる。利用者がつなぐのは Cloudflare で、Cloudflare が改めてオリジン（OCI の LB）につなぎ直す。そのため LB に来るのは Cloudflare の IP だけで、NSG でそこに絞れば、LB の IP を直接たたく迂回を防げる。Origin 証明書はブラウザに信頼されず Cloudflare だけが信頼するので、プロキシを外すと HTTPS も通らなくなる。
 - Cloudflare とオリジンの間の暗号化は、SSL/TLS の暗号化モードで決まる。Flexible は Cloudflare → オリジンが HTTP、Full は HTTPS だが証明書を検証しない、Full (strict) は HTTPS で証明書も検証する。③は Full (strict) で、LB が受けるのは 443番だけ。モードはゾーン全体の設定だが、Workers・Pages はエッジで動くので、①②では関係がなかった。
+- CDN の用語では、利用者 → **エッジ**（利用者に近い Cloudflare の拠点）→ **オリジン**（コンテンツが生まれる大元。③では OCI の LB）と呼ぶ。HTTPS は2区間あり、証明書も別物。
+  - エッジ証明書（利用者 → Cloudflare）：Cloudflare が公的な CA（Google Trust Services、Let's Encrypt など）から自動で取り、自動で更新する。ブラウザが内蔵するルートで検証できる。①②のサイトもこれを使っている。
+  - Origin 証明書（Cloudflare → オリジン）：Cloudflare が自分の CA（Origin CA）で無料で発行し、オリジン側（OCI の LB）に置く。信頼するのは Cloudflare だけ。公的な CA のエコシステムの外なので、有効期限の短縮のルール（2026年3月から200日など）の外にあり、15年で作れる。ブラウザに直接見せると警告になる。→ [方式検討：OCI](../design/oci.md)
+- Wrangler には任意の DNS レコードを作るコマンドがない（②でレコードができたのは、Worker の独自ドメインを登録した副作用）。CLI で DNS を触るなら、Cloudflare 公式の汎用 CLI `cf`（npm の `cf`、beta）の `cf dns records create`。中身は Cloudflare API そのもので、同じ JSON を curl で送っても同じことができる。
+- DNS のワイルドカード（`*.example.com`）は、個別のレコードがある名前には効かない（個別のほうが優先）。正規表現は書けず、一番左のラベル全体が `*` の形だけ。Cloudflare の無料のエッジ証明書は1階層（`*.example.com`）までなので、`x.oci.example.com` のような2階層は有料（Advanced Certificate Manager）になる。
+- Full と Full (strict) の差は「つないだ相手が本物か」を確かめるかどうかだけ。どちらも暗号化はされる。Full だと、DNS の IP が間違っていたり、LB を作り直して古い IP が他人に渡ったりしても、Cloudflare はそこへ黙ってつなぐ。strict ならエラー（526）で止まる。Origin 証明書を使えば、どちらのモードでもコードは同じ。
+- 暗号化モードは、Configuration Rules でホスト名ごとに上書きできる（Free プランでも使える）。ゾーン全体を変えずに、一部のホスト名だけ strict にすることもできる。
+- Full でも Full (strict) でも、Cloudflare は利用者と同じプロトコルでオリジンにつなぐ（http なら 80番）。LB が 443番しか受けないなら、「Always Use HTTPS」を有効にして、エッジで https に転送させる。
+- プロキシの残存リスク：Cloudflare は中身を平文で見る。また、NSG で Cloudflare の IP に絞っても、ほかの Cloudflare 利用者が自分のゾーンからこちらの IP に向ければ、Cloudflare 経由で届いてしまう。本気で防ぐなら Authenticated Origin Pulls（Cloudflare → オリジンの mTLS）を使う。
+- プロキシをやめて DNS だけにする場合、証明書はブラウザが信頼するもの（Let's Encrypt など）が要り、更新の仕組み（ACME と LB への差し替え）を自分で持つことになる。LB も世界中に公開することになり、WAF や DDoS 対策もなくなる。
 - Always Free の MySQL HeatWave（`MySQL.Free`）は、作成時にバックアップの設定（`backup_policy`）を指定できない（`Cannot specify backup policy ... for an Always Free DB system`）。OCI の既定の自動バックアップになる。
 - MySQL HeatWave は、サブネットへの VNIC の作成と NSG への参加を、DB システム自身の権限（リソース・プリンシパル）で行う。管理者の権限は使われないので、`Allow any-user to {VNIC_CREATE, ...} ... where request.principal.type='mysqldbsystem'` のポリシーが別に要る。ないと DB システムが FAILED になり、出るのは「AuthorizationFailed」だけ。原因は Audit のログで、自分以外（authType が resource）の 404 を探して分かった（`CreateInternalVnic`）。
 - pipx は、Python 製のコマンドを1つずつ専用の venv に入れ、コマンドだけを `~/.local/bin` に置く道具。Ubuntu 24.04 はシステムの Python への `pip install` を禁止している（PEP 668）ので、apt にない Python 製の CLI（oci CLI など）は pipx で入れる。Ansible の `community.general.pipx` モジュールは pipx 1.7 以上が前提で、Ubuntu 24.04 の pipx（1.4）では動かない。`command: pipx install ...` に `creates:`（このファイルがあれば実行しない）を付けて、何度流しても同じ状態を保った。
