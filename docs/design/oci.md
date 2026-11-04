@@ -40,12 +40,12 @@ Cloudflare (DNS / proxy / WAF)                   |
 | [Bastion]     -> SSH 22 of app / ops / mail (sessions up to 3h)            |
 +----------------------------------------------------------------------------+
   Object Storage: Terraform state, per-app buckets, backups
-  Vault: DB passwords, registry token     Monitoring + Notifications: alarms -> email
+  Vault: DB passwords                    Monitoring + Notifications: alarms -> email
   Budget: alert when cost > 0
 
 Dev PC (WSL) -- Terraform ----------------------> OCI resources, Cloudflare DNS
 Dev PC (WSL) -- Ansible (ssh via Bastion) ------> inside of VMs
-Dev PC (WSL) -- npm run deploy -----------------> build arm64 image -> OCIR -> app VM
+Dev PC (WSL) -- npm run deploy -----------------> rsync source -> build on app VM
 ```
 
 | 層 | 使うもの | 役割 |
@@ -274,15 +274,18 @@ Client --HTTPS--> Cloudflare edge --HTTPS (Origin CA cert, verified)--> OCI LB :
 Dev PC (WSL)
   docker compose up        app + mysql container (same version as HeatWave, 26.10)
   npm run deploy
-    1. docker buildx build --platform linux/arm64 -> push to OCIR (tag = git SHA)
-    2. ssh app (via Bastion): pull -> migrate (docker compose run --rm app migrate)
-                              -> up -d -> health check
+    1. rsync source -> app:/opt/apps/<name>/ (via Bastion)
+    2. on app: write .env (DB password from Vault, instance principal)
+               -> tag current image :previous -> docker compose build (arm64, native)
+               -> migrate (docker compose run --rm app) -> up -d -> health check
   git push                 storage only
 ```
 
-- **イメージの置き場は OCIR**（OCI Container Registry）。サービス自体は無料で、容量は Object Storage の料金で数えられる。Always Free に含まれるかは公式で確認できていないので、最初の push の後に Cost Analysis を見る。古いタグは保持ポリシーで自動で消す。課金が出たら GHCR（公開イメージは無料）に替える。
-- **A1 は Arm（arm64）。** WSL は x86 なので、buildx でクロスビルドする（エミュレーションで遅め）。遅すぎたら app VM の上でビルドする形に変える。
-- **マイグレーションは app VM の上で流す。** HeatWave は VCN の中にあり、手元から届かない。②の「マイグレーション + `wrangler deploy`」と同じく、デプロイのスクリプトに含める。アプリごとのスキーマと DB ユーザーは、初回だけ `npm run db:init` のようなスクリプトで作る。
+- **イメージは運ばず、app VM の上でビルドする。** 手元で確かめたイメージをそのまま運べないのは、手元（x86）と app（Arm、arm64）で CPU が違うため。OCIR に置く形でも、手元で arm64 向けに別にビルドし直す（エミュレーションで遅い）ことになり、確かめたイメージそのものを運ぶわけではない。それなら、同じソース・同じ `package-lock.json`・同じベースイメージから、app の上でそのままビルドするほうが速く、レジストリの認証トークンもいらない。
+- 戻すときのために、入れ替える前のイメージを `:previous` のタグで VM に残す。イメージの履歴はこの1つだけ。
+- 比べた案：**OCIR**（OCI Container Registry）。標準的な形でイメージの履歴も残るが、認証トークンが手元と app の両方に要り、容量の課金も公式で確かめられていない。レジストリの運用を学ぶ題材として、後から足せる。
+- **DB のパスワードは手元を通らない。** アプリの Terraform がパスワードを作って共通基盤の Vault に入れ、デプロイのとき app VM が `platform-secret`（インスタンス・プリンシパル）で取り出して `.env`（権限 600）に書く。コンテナの環境変数は Docker が設定ファイルに保存するので、VM のディスクには残る。そこは割り切る。
+- **マイグレーションは app VM の上で流す。** HeatWave は VCN の中にあり、手元から届かない。②の「マイグレーション + `wrangler deploy`」と同じく、デプロイのスクリプトに含める。アプリごとのスキーマと DB ユーザーは、初回だけ `npm run db:init` で作る（ops から。ops には mysql のクライアントと、Vault から管理者のパスワードを読む権限がある）。
 - Docker ホストが1台なので、入れ替えの数秒はそのアプリが止まる。受け入れる。2台に戻したら、1台ずつ入れ替え、マイグレーションは「列を足すのが先、消すのは後」（expand / contract）で書く。
 - GitHub Actions は使わない（②と同じ理由）。使うなら、公開リポジトリは Arm の runner が無料で使える。
 
@@ -300,6 +303,22 @@ Dev PC (WSL)
 ```
 
 アプリ側の Terraform にアプリ固有の LB 設定を持たせるので、「1サービス＝1ディレクトリ」は③でも残る。
+
+### 誰が何を持つか
+
+共通基盤は一度作れば終わり（更新はするが、アプリを足しても触らない）。アプリを足すたびに増えるのは右の列だけで、すべてアプリのリポジトリから行う。
+
+| もの | 共通基盤（一度だけ） | アプリごと（足すたび） |
+| --- | --- | --- |
+| Cloudflare のゾーン | 手：暗号化モード Full (strict)、Always Use HTTPS、Origin 証明書の発行、API トークン | なし |
+| DNS レコード | Terraform（`oci-platform/terraform/cloudflare.tf`）：確認用の `oci-platform` | Terraform（`<name>/infra/terraform/cloudflare.tf`）：`<name>.alphajinsei.com` → LB |
+| LB | Terraform（`lb.tf`）：LB、証明書、既定のリスナーとバックエンド・セット（8000） | Terraform（`main.tf`）：ホスト名、リスナー（443、ホスト名付き）、バックエンド・セット（`/health`）、バックエンド（app:ポート） |
+| ポート | NSG で 8000〜8099 をまとめて開ける | 手：共通基盤の README の台帳に1行足す |
+| app VM | Ansible：OS、Docker、iptables、oci CLI、`platform-secret`、`/opt/apps`、既定のページ | `npm run deploy`：`/opt/apps/<name>/` のソース、`.env`、イメージ、コンテナ |
+| HeatWave | Terraform：DB システム、管理者のユーザー | `npm run db:init`（初回だけ、ops から）：スキーマと専用のユーザー。マイグレーションは毎回の `npm run deploy` |
+| Vault | Terraform：Vault、鍵、管理者のパスワード、VM が読むためのポリシー | Terraform（`main.tf`）：`<name>-db-password` |
+| state | 手（Step 0）：バケット `tfstate`。キーは `oci-platform/terraform.tfstate` | キー `<name>/terraform.tfstate`（`versions.tf`） |
+| SSH（Bastion、`ssh_config`） | Terraform + `bin/bastion-proxy` | なし（スクリプトが `ssh oci-app` / `ssh oci-ops` を使う） |
 
 ### アプリが受け取るもの（共通基盤の仕様）
 
@@ -353,7 +372,7 @@ Dev PC (WSL)
 
 | もの | 使い方 |
 | --- | --- |
-| Vault | DB のパスワード、OCIR のトークン。VM はインスタンス・プリンシパルで取りに行く（手元にも VM のディスクにも置かない）。Vault は DEFAULT 型（無料）、鍵はソフトウェアの鍵（無料）にした。専用の区画を持つ仮想プライベート Vault は有料。Vault は消すと復元の猶予の後に戻せないので、Terraform で `prevent_destroy` を付ける。HeatWave の管理者のパスワードは Terraform が作って Vault に入れるので、値は state にも残る（state は非公開のバケットにある） |
+| Vault | DB のパスワード（管理者とアプリごと）。VM はインスタンス・プリンシパルで取りに行く（`platform-secret <名前>`。手元には置かない）。Vault は DEFAULT 型（無料）、鍵はソフトウェアの鍵（無料）にした。専用の区画を持つ仮想プライベート Vault は有料。Vault は消すと復元の猶予の後に戻せないので、Terraform で `prevent_destroy` を付ける。HeatWave の管理者のパスワードは Terraform が作って Vault に入れるので、値は state にも残る（state は非公開のバケットにある） |
 | Monitoring + Notifications | アラーム：LB の異常なバックエンドが1つ以上、VM の CPU・メモリ、HeatWave のストレージ。通知はメール |
 | Budget | 予算アラート（金額が0円を超えたら通知）。枠を超えて課金されたことに気付くため |
 | OS の更新（自動） | unattended-upgrades でセキュリティの更新だけ毎日入れる。**自動で再起動しない。Docker 本体は対象外**。needrestart にも Docker を再起動させない。Docker は `live-restore` で、デーモンが再起動してもコンテナを止めない。これで、勝手にコンテナが止まることはない |
@@ -367,7 +386,6 @@ Dev PC (WSL)
 - NAT Gateway の料金
 - 予約パブリック IP の料金
 - ボリュームのバックアップ（容量の上限の記載がない）
-- OCIR のイメージの容量
 
 調べるもの：
 
@@ -390,3 +408,4 @@ Dev PC (WSL)
 11. **作業用の VM**：既存のマイクロ2台（2023年に勉強で作ったもの）は、ブートボリュームのバックアップを取ってから消す。残すものを調べる手間を、必要になったときに先送りできる。作業用の VM は、新しい VCN に作り直す（ops）。
 12. **Cloudflare → LB の暗号化：Full (strict)**：個人サイトなので、HTTP（Flexible）や自己署名（Full）でも許せると考えた。しかし Full (strict) にしても手間はほぼ変わらず、Workers・Pages への影響もない。Full では、IP の間違いや、手放した IP が他人に渡ったときにも、黙ってそこにつないでしまう。そこで strict にした。プロキシをやめて Let's Encrypt を LB に置く案は、更新の仕組みを自分で持つ手間と、LB を全世界に公開することから見送った（5）。
 13. **Cloudflare の設定の持ち方：Terraform で全部 → ゾーンの設定は手、レコードはアプリの Terraform**：最初は Origin 証明書の発行も DNS も Terraform で持つつもりだった。しかし DNS の大部分は手で作ってきており、②では wrangler もレコードを作るので、持ち主が3つに分かれて見通しが悪い。ゾーンとアカウントの設定（証明書を含む）は手にし、Terraform は自分のレコードだけを `cloudflare.tf` で持つ形にした。ワイルドカードと `cf` も比べた（7）。
+14. **イメージの運び方：OCIR → app VM の上でビルド**：手元（x86）と app（arm64）で CPU が違い、OCIR を使っても手元で確かめたイメージそのものは運べない。レジストリの認証トークンを増やさず、0円が確実な、app の上でのビルドにした（8）。

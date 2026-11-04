@@ -25,7 +25,7 @@
 | 3 | VM と Bastion と Ansible | A1 / マイクロ、Bastion のセッション、Ansible の基本 |
 | 4 | DB と Vault | HeatWave、Vault、インスタンス・プリンシパル |
 | 5 | LB と公開 | Flexible LB、Origin 証明書、Cloudflare の DNS を Terraform で |
-| 6 | サンプルアプリ | Docker、arm64 のビルド、OCIR、デプロイのスクリプト |
+| 6 | サンプルアプリ | Docker、VM の上でのビルド、Vault からのパスワードの受け渡し、デプロイのスクリプト |
 | 7 | 運用 | Monitoring、Notifications、Logging、OS の自動更新 |
 | 8 | メールサーバー | Postfix / Dovecot、Email Delivery への中継、SPF・DKIM・DMARC |
 | 9 | 仕上げ | 共通基盤の仕様、README、サービス開発ガイドの③の行 |
@@ -359,14 +359,64 @@ curl -sk --max-time 5 https://$LB_IP || echo "blocked"  # Cloudflare 以外か�
 
 ## Step 6：サンプルアプリ
 
-- [ ] `sample-oci-vm-docker` を作る。手元で `docker compose up`（アプリ + MySQL のコンテナ）
-- [ ] アプリ側の Terraform（LB の振り分け、DNS、バケット）を作る
-- [ ] `npm run db:init`（スキーマとユーザー）と `npm run deploy`（arm64 のビルド → OCIR → app で入れ替え）
-- [ ] 翌日、Cost Analysis で OCIR の分の金額が増えていないかを確かめる
+コードは `~/claude-sandbox/sample-oci-vm-docker`（②のメモ帳の API を、Node + MySQL に載せ替えたもの。中身と手順は、その README）。共通基盤の側は、app にも oci CLI と `platform-secret`（Vault からシークレットを取り出す）を入れ、Terraform の出力に `vault_key_id` を足した。イメージは運ばず、ソースを送って app の上でビルドする（[方式検討 8](../design/oci.md#8-デプロイcicd)）。
+
+- [x] 共通基盤の変更を流す（app に oci CLI と `platform-secret`、`/opt/apps`。Terraform は出力が1つ増えるだけ）
+
+```bash
+cd ~/claude-sandbox/oci-platform/terraform && ./tf.sh apply
+cd ../ansible && ansible-playbook site.yml
+ssh oci-app platform-secret mysql-admin-password | wc -c   # 文字数だけ出す（値は表示しない）。24 なら読めている
+```
+
+- [x] GitHub にリポジトリを作る（Template repository にする）
+
+```bash
+cd ~/claude-sandbox/sample-oci-vm-docker
+gh repo create sample-oci-vm-docker --public --source . --push
+gh repo edit --template
+```
+
+- [x] 手元で動かす
+
+```bash
+npm install
+docker compose up -d mysql
+npm run db:migrate:local
+npm run dev                                    # 別のターミナルで curl（README の 3）
+docker compose up -d --build                   # 本番と同じコンテナでも確かめる（:8001）
+docker compose run --rm app node dist/migrate.js
+curl -s localhost:8001/api/memos
+docker compose down
+```
+
+- [x] アプリの分を共通基盤に足す（LB のホスト名・リスナー・バックエンド・セット、DB のパスワード、DNS レコード）。LB に同じ 443 番のリスナーを、ホスト名を付けて並べられるかを、ここで確かめる
+
+```bash
+cd infra/terraform
+./tf.sh init
+./tf.sh plan
+./tf.sh apply
+cd ../..
+```
+
+- [x] スキーマとユーザーを作り（初回だけ）、デプロイする
+
+```bash
+npm run db:init       # ops から HeatWave に
+npm run deploy        # 初回はベースイメージの取得と npm ci で数分かかる
+curl -s https://sample-oci-vm-docker.alphajinsei.com/api/health
+curl -s -X POST https://sample-oci-vm-docker.alphajinsei.com/api/memos -H "Content-Type: application/json" -d '{"text":"OCI から"}'
+curl -s https://sample-oci-vm-docker.alphajinsei.com/api/memos
+curl -s https://oci-platform.alphajinsei.com       # 共通基盤の既定のページも、引き続き返る
+```
+
+- [x] コンソールの LB の画面で、バックエンド・セット `sample-oci-vm-docker` のヘルスが OK になっていることを見る
 
 理解ポイント：
 
-- ②の `npm run deploy` と比べて、何が増えたか。
+- ②の `npm run deploy` と比べて、何が増えたか（ソースの転送、VM の上でのビルド、マイグレーションを流す場所、パスワードの受け渡し）。
+- DB のパスワードは、どこで作られ、どこを通って、どこに残るか。
 
 ## Step 7：運用
 

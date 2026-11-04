@@ -165,7 +165,13 @@
 - MySQL HeatWave は、サブネットへの VNIC の作成と NSG への参加を、DB システム自身の権限（リソース・プリンシパル）で行う。管理者の権限は使われないので、`Allow any-user to {VNIC_CREATE, ...} ... where request.principal.type='mysqldbsystem'` のポリシーが別に要る。ないと DB システムが FAILED になり、出るのは「AuthorizationFailed」だけ。原因は Audit のログで、自分以外（authType が resource）の 404 を探して分かった（`CreateInternalVnic`）。
 - pipx は、Python 製のコマンドを1つずつ専用の venv に入れ、コマンドだけを `~/.local/bin` に置く道具。Ubuntu 24.04 はシステムの Python への `pip install` を禁止している（PEP 668）ので、apt にない Python 製の CLI（oci CLI など）は pipx で入れる。Ansible の `community.general.pipx` モジュールは pipx 1.7 以上が前提で、Ubuntu 24.04 の pipx（1.4）では動かない。`command: pipx install ...` に `creates:`（このファイルがあれば実行しない）を付けて、何度流しても同じ状態を保った。
 - Terraform の state は、公式の `oci` backend で Object Storage に置ける（ロックあり。S3 互換の方法は非推奨）。
-- A1 は Arm なので、x86 の WSL でビルドするイメージは `docker buildx --platform linux/arm64` でクロスビルドする。
+- A1 は Arm なので、x86 の WSL でビルドするイメージは `docker buildx --platform linux/arm64` でクロスビルドする。③では使わず、ソースを送って app の上でビルドする。手元で確かめたイメージ（x86）は、どのみち本番（arm64）にそのまま持っていけない。
+- OCI LB のホスト名による振り分けは、「ホスト名」（仮想ホスト名の登録）と「リスナー」（`hostname_names` にそれを付ける）の2段。どのホスト名にも合わないリクエストは、ホスト名を持たないリスナーが受ける。コンソールでは LB の詳細の左のメニューの「ホスト名」。
+- MySQL の公式イメージのヘルスチェックを `mysqladmin ping -h localhost` にすると、初期化中の仮のサーバー（ネットワークを閉じて、ソケットだけで動く）でも通ってしまい、アプリが早く起きてテーブルの作成とぶつかる。`-h 127.0.0.1`（TCP）で聞く。
+- HeatWave はパスワードの規則（validate_password）が有効で、大文字・小文字・数字・記号をそれぞれ1文字以上含まないと `ERROR 1819` になる。Terraform の `random_password` は、`min_upper` などを付けないと記号が1つも入らないことがある。
+- `ssh host bash -s < script.sh` でスクリプトを流し込むと、途中で標準入力を読むコマンド（`docker compose run`、`ssh` など）が、スクリプトの残りを食べてしまう。bash は入力が尽きたと見て、エラーなしで終わる。スクリプトは先にファイルで送って実行するか、そのコマンドに `-T` や `< /dev/null` を付ける。
+- MySQL には `RETURNING` がない。Drizzle では、挿入した行の ID を `$returningId()` で受け取る。
+- `docker compose` は `compose.override.yaml` を自動で重ねる。手元だけの MySQL や接続情報をそこに書き、本番には送らない。
 - サブドメインとパスの振り分けの比較：パスにすると、アプリ全体に base path の設定が要り、Cookie などのオリジンも共有になる。サブドメインなら Origin 証明書 `*.alphajinsei.com` 1枚で足り、方式をまたいで DNS の向け先を変えるだけで移せる。→ [方式検討：OCI](../design/oci.md)
 
 ## 認証情報の一覧
