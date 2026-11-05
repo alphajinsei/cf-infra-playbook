@@ -563,10 +563,53 @@ Let's Encrypt の証明書を ACME の HTTP-01 で取り（自動更新）、Dov
 
 ### 8-4. 送信
 
-- [ ] Email Delivery：承認済みの差出人、SMTP の資格情報（Vault へ）、Email Domain（DKIM、カスタム Return-Path）
-- [ ] Postfix の 465・587番（Dovecot でログイン）と、Email Delivery への中継
-- [ ] SPF・DKIM・DMARC（`p=none`）を Terraform で置く。DKIM を誰が署名するかを決める
-- [ ] Gmail に送り、`Authentication-Results:` で SPF・DKIM・DMARC が全部 pass になることを確かめる
+メールソフトから 465・587番でログインして送り、Postfix が全部を Email Delivery に中継する。Email Delivery が DKIM（`d=alphajinsei.com`）で署名し、封筒の差出人を `bounce.alphajinsei.com`（カスタム Return-Path）にして送るので、SPF・DKIM の両方で DMARC のアライメントが取れる。Email Delivery の設定（ドメイン、DKIM、Return-Path、承認済みの差出人、中継用の IAM のユーザーと SMTP の資格情報）と DNS（SPF、DKIM、Return-Path、DMARC）は Terraform で作る。
+
+- [x] Email Delivery と DNS を作る。1回目の apply は Return-Path で失敗する（DKIM が Active でないと作れない）ので、DKIM が Active になってからもう一度 apply する
+
+  ```bash
+  cd ~/claude-sandbox/oci-platform/terraform
+  ./tf.sh apply          # 1回目：Return-Path だけ失敗する
+  # コンソールで DKIM が Active になるのを待つ（下の項目）
+  ./tf.sh apply          # 2回目：Return-Path と、その CNAME・SMTP の資格情報ができる
+  terraform output mail_relay
+  ```
+
+- [x] コンソールの「開発者サービス → アプリケーション統合 → 電子メール配信 → 電子メール・ドメイン → alphajinsei.com」で、DKIM と Return-Path が「Active」（DNS が確かめられた）になり、承認済みの差出人に SPF の印が付くのを待つ（数分〜数十分）
+
+  ```bash
+  dig +short TXT alphajinsei.com
+  dig +short TXT _dmarc.alphajinsei.com
+  dig +short CNAME oci-nrt-20261105._domainkey.alphajinsei.com
+  dig +short CNAME bounce.alphajinsei.com
+  ```
+
+- [x] Postfix に送信の受付（465・587番）と中継を足す
+
+  ```bash
+  cd ../ansible
+  ansible-playbook site.yml --limit mail
+  ssh oci-mail 'sudo postconf -M | head -3; sudo postconf relayhost'
+  ```
+
+- [x] ops から、ログインしないと送れないことを確かめる
+
+  ```bash
+  ssh oci-ops
+  swaks --server 10.0.1.10 --port 587 --tls --to alphajinsei@gmail.com --from alphajinsei@alphajinsei.com
+  #   ログインなし：554 Relay access denied などで拒否される
+  ```
+
+- [x] Outlook に送信（SMTP）を設定する：`mail.alphajinsei.com`、465、SSL/TLS、ユーザー名 `alphajinsei@alphajinsei.com`、パスワードは受信と同じ（Outlook は送信のポートが既定で 25 になる。25 のままだと `503 5.5.1 Error: authentication not enabled` で送れない）
+- [x] `alphajinsei@gmail.com` に送る。mail VM の `/var/log/mail.log` で、`relay=smtp.email.ap-tokyo-1.oci.oraclecloud.com[...]:587 ... status=sent (250 ...)` を見る
+- [x] Gmail で「メッセージのソースを表示」を開き、`SPF: PASS`、`DKIM: PASS`、`DMARC: PASS` と、3つの差出人（`Return-Path:` が `bounce.alphajinsei.com`、`DKIM-Signature:` の `d=alphajinsei.com`、`From:`）を確かめる
+- [x] Gmail から返信し、Outlook に届くことを確かめる
+
+理解ポイント：
+
+- 封筒の差出人を誰が決めているか（Outlook → Postfix では `alphajinsei@alphajinsei.com`、Email Delivery が `bounce.alphajinsei.com` に書き換える）。SPF と DKIM が、それぞれどのドメインで通ったか。
+- 中継先へのログイン（Postfix がクライアント）と、メールソフトからのログイン（Postfix がサーバー、確認は Dovecot）の2つの SASL。
+- オープンリレーにしないための、465・587番の `permit_sasl_authenticated,reject`。
 
 ### 8-5. 守り
 

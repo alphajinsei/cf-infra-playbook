@@ -52,32 +52,84 @@
 
 ## 4. 構成
 
+実線は Step 8-4 までに作ったもの、点線の枠は 8-5・8-6 で足すもの。
+
+```mermaid
+flowchart LR
+  ext["よそのメールサーバー<br/>Gmail など"]
+  mua["メールソフト<br/>Outlook"]
+  le["Let's Encrypt"]
+  subgraph cf["Cloudflare DNS"]
+    dns["MX・A（mail）<br/>SPF・DMARC（TXT）<br/>DKIM・bounce（CNAME）"]
+  end
+  subgraph oci["OCI"]
+    subgraph mailvm["mail VM（public-dmz）"]
+      pf25["Postfix :25<br/>受信（ログインなし）"]
+      pfsub["Postfix :465・:587<br/>送信の受付（ログイン必須）"]
+      dov["Dovecot<br/>IMAP :993・LMTP・認証"]
+      box[("Maildir<br/>/srv/mail")]
+      cb["certbot :80<br/>証明書の取得と更新"]
+      rs["Rspamd・fail2ban<br/>（8-5）"]
+    end
+    app["app VM のコンテナ<br/>（8-6）"]
+    vault["Vault<br/>メールと中継のパスワード"]
+    ed["Email Delivery<br/>承認済みの差出人<br/>DKIM の署名<br/>Return-Path の書き換え"]
+  end
+
+  ext -- "25（STARTTLS）" --> pf25
+  pf25 -- "LMTP" --> dov
+  dov --> box
+  mua -- "993（IMAPS）" --> dov
+  mua -- "465（SSL/TLS、ログイン）" --> pfsub
+  pfsub -. "ログインの確認" .-> dov
+  pfsub -- "587（TLS、IAM ユーザー mail-relay）" --> ed
+  ed -- "25" --> ext
+  ext -. "バウンス（bounce.alphajinsei.com 宛て）" .-> ed
+  ext -. "MX・SPF・DKIM・DMARC を引く" .-> dns
+  le -- "80（HTTP-01）" --> cb
+  vault -. "Ansible が platform-secret で読む" .-> mailvm
+  app -. "587" .-> pfsub
+  style rs stroke-dasharray: 5 5
+  style app stroke-dasharray: 5 5
 ```
-Internet (Gmail etc.)
-   |  25 (SMTP, STARTTLS)          MUA (Thunderbird, phone)
-   v                                  |  465/587 (login)   993 (IMAP)
-+--------------------------- mail VM (public-dmz, A1 1 OCPU / 4GB) ------+
-|  Postfix :25  -> Rspamd (spam check, SPF/DKIM/DMARC of incoming)       |
-|      |                                                                  |
-|      +--> Dovecot LMTP --> /srv/mail/<domain>/<user>/Maildir           |
-|  Postfix :465/:587 (SASL auth by Dovecot) -> Rspamd (DKIM sign)        |
-|      |                                                                  |
-|      +--> relay: smtp.email.ap-tokyo-1.oci.oraclecloud.com:587 --------+--> Email Delivery --> Internet
-|  Dovecot IMAP :993                                                     |
-|  certbot (Let's Encrypt, mail.alphajinsei.com), fail2ban               |
-+-------------------------------------------------------------------------+
-        ^  587 (inside the VCN)
-        |
-   app VM containers (notifications from apps)
+
+メールの流れ（送信と受信）：
+
+```mermaid
+sequenceDiagram
+  participant O as Outlook
+  participant P as Postfix（mail VM）
+  participant D as Dovecot（mail VM）
+  participant E as Email Delivery
+  participant G as Gmail
+  participant N as DNS（Cloudflare）
+
+  Note over O,N: 送信
+  O->>P: 465（TLS）、ログイン alphajinsei@alphajinsei.com
+  P->>D: パスワードの確認（private/auth）
+  P->>P: 封筒の差出人がログインした人のものか（sender_login）
+  P->>E: 587（STARTTLS、証明書を確認）、ログイン mail-relay
+  E->>E: From: が承認済みか、封筒の差出人を bounce.alphajinsei.com に、DKIM で署名（d=alphajinsei.com）
+  E->>G: 25
+  G->>N: SPF（bounce.alphajinsei.com）、DKIM の公開鍵、DMARC を引く
+  G->>G: SPF・DKIM・DMARC が pass なら受信箱へ
+
+  Note over O,N: 受信
+  G->>N: alphajinsei.com の MX を引く（mail.alphajinsei.com）
+  G->>P: 25（STARTTLS）
+  P->>P: 宛先が vmailbox・virtual にあるか
+  P->>D: LMTP
+  D->>D: Maildir に保存
+  O->>D: 993（IMAPS）で読む
 ```
 
 | 部品 | 役割 |
 | --- | --- |
 | Postfix | MTA（25番）と MSA（465・587番）。受けたメールを Dovecot に渡し、送るメールを Email Delivery に中継する |
 | Dovecot | IMAP（993番）、メールボックスへの保存（LMTP）、ログインの確認（Postfix の SASL もここを使う） |
-| Rspamd（と Redis） | 受け取ったメールの点数付け（迷惑メールの判定、SPF・DKIM・DMARC の確認）。送るメールへの DKIM の署名 |
+| Rspamd（と Redis）（8-5） | 受け取ったメールの点数付け（迷惑メールの判定、SPF・DKIM・DMARC の確認）。送るメールへの DKIM の署名 |
 | certbot | Let's Encrypt の証明書の取得と自動更新 |
-| fail2ban | ログインの失敗が続く IP を、しばらく締め出す |
+| fail2ban（8-5） | ログインの失敗が続く IP を、しばらく締め出す |
 
 - すべて Ubuntu のパッケージで入れ、Ansible のロール `mail` にする。Docker は使わない（メールは状態を持ち、ポートを直接受けるので、VM 単体で動かす。[oci.md の 2](oci.md#2-全体の構成)）。
 - メールボックスは Maildir（1通1ファイル）で `/srv/mail` に置く（[oci.md の 3](oci.md#3-always-free-の枠と割り振り)）。
@@ -87,7 +139,8 @@ Internet (Gmail etc.)
 Email Delivery の仕様（2026-11 に公式の資料で確認）：
 
 - **承認済みの差出人**（Approved Sender）を `From:` のアドレスごとに登録する。登録していない `From:` は拒否される（＝差出人の制限にもなる）。
-- 認証は SMTP の資格情報（IAM のユーザーに紐づく。1ユーザーに2つまで）。Postfix の中継の設定に書く。値は Vault に入れ、Ansible が mail VM に書く。
+- 認証は SMTP の資格情報（IAM のユーザーに紐づく。1ユーザーに2つまで）。中継専用の IAM のユーザー `mail-relay`（グループ `mail-relay`、権限は `use approved-senders` だけ）を Terraform で作り、資格情報のパスワードは Vault（`mail-relay-smtp-password`）へ。Ansible が mail VM の `/etc/postfix/sasl_passwd`（root だけが読める）に書く。
+- Email Delivery の設定（Email Domain、DKIM、カスタム Return-Path、承認済みの差出人）も Terraform（`terraform/mail.tf`）。DNS のレコードは、その出力を `cloudflare.tf` が Cloudflare に書く。
 - 受信の機能はない（送信専用）。
 - **何もしないと、封筒の差出人は Oracle のドメインになる**（バウンスを Email Delivery が受けるため）。SPF は Oracle のドメインで通るが、`From:` と一致しないので、DMARC には効かない。
 
@@ -95,10 +148,10 @@ Email Delivery の仕様（2026-11 に公式の資料で確認）：
 
 | 仕組み | どうするか | DMARC に効く理由 |
 | --- | --- | --- |
-| DKIM | `d=alphajinsei.com` で署名する。誰が署名するかは Step 8-4 で決める（Rspamd で自分で署名するか、Email Delivery の Email Domain で署名してもらうか。両方でもよい） | 署名のドメインが `From:` と一致する |
+| DKIM | `d=alphajinsei.com` で署名する。**Email Delivery に署名してもらう**（Email Domain の DKIM。鍵は Email Delivery が持ち、公開鍵は CNAME で指す）。自分で署名する（Rspamd）のは、8-5 で別のセレクターで足すかを決める | 署名のドメインが `From:` と一致する |
 | SPF | カスタム Return-Path：封筒の差出人を `bounce.alphajinsei.com` のような自分のサブドメインにしてもらう（CNAME を置く） | 封筒の差出人が `From:` の親ドメインと一致する（relaxed） |
 
-- `alphajinsei.com` の SPF は、Email Delivery だけを許す（`include:` は Step 8-4 でコンソールの表示に合わせる）。mail VM の IP からは外へ送らないので載せない。
+- `alphajinsei.com` の SPF は、Email Delivery だけを許す（`include:ap.rp.oracleemaildelivery.com`）。mail VM の IP からは外へ送らないので載せない。
 - DMARC は `p=none` で始め、レポート（`dmarc@`）で全部通ることを確かめてから `quarantine` に上げる。
 
 ## 6. DNS のレコード
@@ -109,9 +162,9 @@ Cloudflare に置き、oci-platform の `cloudflare.tf` で Terraform が持つ�
 | --- | --- | --- | --- |
 | `mail.alphajinsei.com` | A | mail VM の公開 IP。**プロキシしない**（Cloudflare は SMTP や IMAP を通さない） | MX の向け先、メールソフトの接続先 |
 | `alphajinsei.com` | MX | `10 mail.alphajinsei.com` | 受信 |
-| `alphajinsei.com` | TXT | `v=spf1 include:... -all` | SPF |
-| `<selector>._domainkey.alphajinsei.com` | TXT か CNAME | DKIM の公開鍵 | DKIM |
-| `bounce.alphajinsei.com` など | CNAME / MX | Email Delivery が示すもの | カスタム Return-Path |
+| `alphajinsei.com` | TXT | `v=spf1 include:ap.rp.oracleemaildelivery.com -all` | SPF |
+| `oci-nrt-20261105._domainkey.alphajinsei.com` | CNAME | Email Delivery 側の公開鍵（TXT） | DKIM |
+| `bounce.alphajinsei.com` | CNAME | Email Delivery 側（SPF とバウンスの受け口の MX） | カスタム Return-Path |
 | `_dmarc.alphajinsei.com` | TXT | `v=DMARC1; p=none; rua=mailto:dmarc@alphajinsei.com` | DMARC |
 
 - mail VM の公開 IP は予約しない（エフェメラル）。A レコードは Terraform が VM の IP を参照して書くので、VM を作り直しても apply で追いつく。
@@ -119,7 +172,7 @@ Cloudflare に置き、oci-platform の `cloudflare.tf` で Terraform が持つ�
 
 ## 7. 証明書とアカウント
 
-- **証明書**：Let's Encrypt で `mail.alphajinsei.com` を取り、certbot が自動で更新する。取り方は Step 8-3 で決める。
+- **証明書**：Let's Encrypt で `mail.alphajinsei.com` を取り、certbot が自動で更新する。取り方は次の2つを比べた。
   - HTTP-01：mail VM の 80番を開け、更新のときだけ certbot が受ける。開けるポートが1つ増える。
   - DNS-01：Cloudflare の API トークン（DNS の編集）を mail VM に置く。トークンはゾーン単位でしか絞れず、mail VM が乗っ取られると DNS 全体を書き換えられる。
   - **HTTP-01 にした**（被害の範囲が小さい）。DNS-01 を選ぶのは、ワイルドカードの証明書が要るとき、外から 80番で届かないサーバー（社内のサーバーなど）のとき、多数のサーバーの証明書を1か所でまとめて取るとき。その場合も、トークンを外に公開するサーバーに置かず、取る専用の場所に置くのが定石。
@@ -152,7 +205,6 @@ Cloudflare に置き、oci-platform の `cloudflare.tf` で Terraform が持つ�
 
 - Email Delivery の無料枠：二次的な資料では「1日100通、月3,000通」。公式の Always Free のページでは未確認。Cost Analysis で0円を確かめる。
 - 逆引き（PTR）：OCI の公開 IP の PTR は、サポートへの依頼で設定してもらう形（A レコードを先に作っておく）。送信は Email Delivery を通すので必須ではない。エフェメラルな IP は作り直すと変わるので、頼むなら予約パブリック IP にしてから。
-- Email Delivery のカスタム Return-Path の DNS（CNAME か MX か）は、コンソールの表示に従う。
 
 ## 11. 検討の経緯
 
@@ -163,3 +215,5 @@ Cloudflare に置き、oci-platform の `cloudflare.tf` で Terraform が持つ�
 5. **アプリからの送信は mail VM を通す**：Email Delivery に直接送る案と比べ、出口を1つにする形を学ぶために mail VM を通す（8）。
 6. **証明書は HTTP-01**：DNS-01 は Cloudflare のトークンを外に公開する mail VM に置くことになり、乗っ取られたときに DNS 全体を書き換えられる。80番を開けるだけの HTTP-01 にした（7）。
 7. **メールのパスワードは Terraform → Vault**：DB のパスワードと同じ形。ハッシュを公開リポジトリに置く案は、弱いパスワードだと手元で総当たりされるので見送った（7）。
+8. **DKIM は Email Delivery に署名してもらう**：鍵の管理と DNS（CNAME）が Terraform だけで済み、Email Delivery の送信の上限の引き上げにも DKIM が要る。自分で署名する（Rspamd）のは学びのために後から足せる（5）。
+9. **構成図を Mermaid にした**：8-4 で送受信がそろったところで、作ったとおりの構成（Rspamd・fail2ban・アプリからの送信は点線）と、送信・受信の流れを図にした。GitHub でそのまま描かれる。

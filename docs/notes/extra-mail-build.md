@@ -217,3 +217,156 @@ systemd timer (certbot.timer)  -- twice a day, random delay -->  certbot renew
 - 公的な証明書の有効期限は短くなる一方。Let's Encrypt は最初から90日で、業界のルール（CA/B Forum）でも2029年に47日まで縮む。Let's Encrypt もさらに短くする計画を出している。
 - 期限が短いほど、鍵が漏れたときの被害の期間は短くなるが、人が手で更新するのは無理になる。「人は最初に仕組みを作るだけで、更新は機械が回す」前提になり、その標準のプロトコルが ACME。
 - Cloudflare の Origin 証明書（15年、手で発行。Step 5）は、公的な CA のルールの外にあるので、例外として長く持てている。
+
+## 8-4. 送信：465・587番と Email Delivery への中継
+
+### SPF・DKIM・DMARC は、それぞれ何を証明するのか
+
+| 仕組み | 証明すること | 確かめる相手 | 証明しないこと |
+| --- | --- | --- | --- |
+| SPF | 「この IP のサーバーは、このドメインの名で送ってよいと、ドメインの持ち主が認めている」 | 封筒の差出人のドメイン（と送ってきた IP） | `From:`、本文。転送されると IP が変わって落ちる |
+| DKIM | 「このメール（本文と主なヘッダー）は、ドメイン `d=` の鍵を持つ者が署名し、途中で書き換えられていない」 | 署名の `d=` のドメイン | `From:`（`d=` は誰のドメインでもよい）。送った経路 |
+| DMARC | 「SPF か DKIM で確かめられたドメインが、人が見る `From:` と一致する」＋持ち主の方針（none / quarantine / reject）と報告先 | `From:` のドメイン | ―（SPF と DKIM の結果を `From:` に結び付ける役） |
+
+- SPF は「経路（どのサーバーから来たか）」、DKIM は「中身（誰が責任を持ち、改ざんされていないか）」を証明する。
+- どちらも `From:` を縛らない。迷惑メールの送り手が自分のドメインで SPF・DKIM を通し、`From:` だけ銀行を名乗ることができる。その穴を埋めるのが DMARC で、だから「アライメント」が中心になる。
+- 実装はこの順に読める：SPF は「許す IP の一覧」を DNS に置く、DKIM は「公開鍵」を DNS に置いて送る側が秘密鍵で署名する、DMARC は「一致しなかったときの扱い」を DNS に置く。
+
+### DNS に置いたレコードの意味
+
+```
+alphajinsei.com.                             TXT   "v=spf1 include:ap.rp.oracleemaildelivery.com -all"
+oci-nrt-20261105._domainkey.alphajinsei.com. CNAME (public key TXT on the Email Delivery side)
+bounce.alphajinsei.com.                      CNAME (SPF and MX for bounces on the Email Delivery side)
+_dmarc.alphajinsei.com.                      TXT   "v=DMARC1; p=none; rua=mailto:dmarc@alphajinsei.com"
+```
+
+SPF：
+
+| 部分 | 意味 |
+| --- | --- |
+| `v=spf1` | SPF のレコードの印（同じ名前の TXT が何本あっても、これで見分ける） |
+| `include:ap.rp.oracleemaildelivery.com` | Oracle が公開しているアジア太平洋の送信サーバーの一覧（その名前の SPF）を取り込む。Oracle がサーバーを増やしても、こちらは変えなくてよい |
+| `-all` | それ以外の IP は fail（はっきり違反）。`~all` だと softfail（怪しいが受け取ってよい） |
+
+- mail VM の IP は書かない（外へは直接送らず、全部 Email Delivery を通す）。
+- カスタム Return-Path が効いていれば、SPF で確かめられるのは `bounce.alphajinsei.com`（CNAME の先の Oracle 側の SPF）。ルートのこのレコードは、封筒の差出人が `@alphajinsei.com` のまま届いたときの保険と、「ほかの誰もこのドメインで送れない」という宣言。
+
+DKIM：本来は `<セレクター>._domainkey.<domain>` に公開鍵そのものを TXT で置く。今回は CNAME で Oracle 側の TXT を指し、秘密鍵は Oracle が持つ（Oracle が鍵を替えても DNS はそのまま）。
+
+DMARC：
+
+| 部分 | 意味 |
+| --- | --- |
+| `v=DMARC1` | DMARC のレコードの印（置き場所も `_dmarc.` と決まっている） |
+| `p=none` | 不合格でも何もしない（様子見）。`quarantine` は迷惑メールへ、`reject` は受け取り拒否 |
+| `rua=mailto:dmarc@...` | 集計レポートの送り先。Gmail などが1日ごとに、どの IP から何通来て SPF・DKIM がどうだったかを XML で送ってくる（`dmarc@` は alphajinsei への別名） |
+
+書いていないものは既定値：`adkim` と `aspf` は relaxed（親ドメインが同じなら一致）、`pct=100`、`sp`（サブドメインの方針）は `p` と同じ。レポートで正しいメールが全部 pass しているのを見てから、8-5 で `quarantine` に上げる。
+
+### 465 と 587：違うのは暗号化を始めるタイミングだけ
+
+| ポート | 暗号化の始め方 | 経緯 |
+| --- | --- | --- |
+| 587（submission） | 平文でつないでから `STARTTLS` で TLS に切り替える | 1998年に「メールソフトからの投稿用」として 25番から分けられた（RFC 6409） |
+| 465（submissions） | つないだ瞬間から TLS（HTTPS と同じ形） | 一度は廃止扱いになったが、2018年の RFC 8314 で正式に戻り、今はこちらが推奨 |
+
+- STARTTLS は、途中の誰かが `STARTTLS` の案内を消して平文のまま話させる、といった攻撃の隙がありうる。
+- どちらかにしか対応しないソフトや機器があるので、両方開けるのが普通。587番も `smtpd_tls_auth_only=yes` で TLS 前のログインを受けないので、安全さは同じ。Outlook には 465 を使う。
+- 25番はサーバー同士の受け渡し用で、ログインはしない。
+
+### 送信の流れと、3つの差出人の移り変わり
+
+```
+Outlook --465 (TLS, login as alphajinsei@alphajinsei.com)--> Postfix (submissions)
+   envelope from: alphajinsei@alphajinsei.com            |  login checked by Dovecot (SASL)
+   From:          alphajinsei@alphajinsei.com            |  sender must match the login (sender_login)
+                                                         v
+                     Postfix (smtp client) --587 (TLS, cert verified, login as IAM user mail-relay)-->
+                                                         Email Delivery
+                                                         |  From: must be an approved sender
+                                                         |  envelope from -> bounce.alphajinsei.com
+                                                         |  DKIM sign: d=alphajinsei.com, s=oci-nrt-20261105
+                                                         v
+                                                       Gmail MX
+```
+
+| 差出人 | Outlook → Postfix | Email Delivery → Gmail | Gmail の判定 |
+| --- | --- | --- | --- |
+| ① 封筒の差出人 | `alphajinsei@alphajinsei.com` | **`...@bounce.alphajinsei.com` に書き換え**（カスタム Return-Path） | SPF：`bounce.alphajinsei.com` の SPF（CNAME で Email Delivery 側）に送信元の IP が載っているか |
+| ② 署名のドメイン | なし | `d=alphajinsei.com`（Email Delivery が署名） | DKIM：`oci-nrt-20261105._domainkey.alphajinsei.com`（CNAME で Email Delivery 側の公開鍵）で検証 |
+| ③ `From:` | `alphajinsei@alphajinsei.com` | そのまま | DMARC：① は親ドメインが同じ（relaxed）、② は同じ。どちらでもアライメントが取れる |
+
+- カスタム Return-Path を置かないと、① は Oracle のドメインになり、SPF は通っても DMARC に効かない（業務でよくある「SPF は pass なのに DMARC は fail」の形）。
+- `alphajinsei.com` そのものの SPF（`include:ap.rp.oracleemaildelivery.com -all`）は、① が `@alphajinsei.com` のまま届く場合の保険。mail VM の IP からは外へ送らないので載せない。
+
+### 2つのログイン（SASL）
+
+| | Postfix の立場 | 相手 | 確かめる人 | 設定 |
+| --- | --- | --- | --- | --- |
+| メールソフトからの送信 | サーバー | Outlook | Dovecot（`private/auth` の口。IMAP と同じユーザーとパスワード） | `smtpd_sasl_*`、master.cf の `-o smtpd_sasl_auth_enable=yes` |
+| Email Delivery への中継 | クライアント | Email Delivery | Email Delivery（IAM のユーザー `mail-relay` の SMTP の資格情報） | `relayhost`、`smtp_sasl_*`、`/etc/postfix/sasl_passwd` |
+
+`smtpd_` は受ける側、`smtp_` は送る側の設定、という命名の規則で見分ける。
+
+### master.cf：口ごとに規則を変える
+
+`main.cf` は全体の既定、`master.cf` はデーモン（口）の一覧で、`-o` でその口だけ設定を上書きできる。
+
+| 口 | ログイン | 中継の許可 | 用途 |
+| --- | --- | --- | --- |
+| 25番（smtp） | させない | 自分のドメイン宛てだけ（`reject_unauth_destination`） | よそのサーバーからの配送 |
+| 587番（submission） | STARTTLS のあと必須（`smtpd_tls_auth_only`） | ログインした人だけ（`permit_sasl_authenticated,reject`） | メールソフトからの送信 |
+| 465番（submissions） | 最初から TLS（`smtpd_tls_wrappermode`）、必須 | 同上 | 同上 |
+
+- 25番でログインを受けないのは、ログインの総当たりの口を増やさないため。メールソフトは 465・587番だけを使う。
+- `reject_sender_login_mismatch`：ログインした人が、`sender_login` にない封筒の差出人を名乗るのを拒否する（他人を名乗らせない）。`From:` は Postfix では見ず、Email Delivery の承認済みの差出人が見る。
+- chroot（デーモンを `/var/spool/postfix` に閉じ込める）は使わない（n）。Ubuntu の既定は y だが、ファイルの置き場が分かりにくくなるので切った。
+
+### 中継先の証明書も確かめる
+
+`smtp_tls_security_level = secure`：Email Delivery の証明書が、`smtp.email.ap-tokyo-1.oci.oraclecloud.com` に対して公的な CA から出たものかを確かめてからパスワードを渡す。8-3 の「証明書は、つないだ相手が本物かを確かめるもの」の、Postfix がクライアントになる側。`may`（相手が対応していれば暗号化）や `encrypt`（暗号化は必須、相手は確かめない）より強い。
+
+### Email Delivery を Terraform で持つ
+
+| リソース | 役割 |
+| --- | --- |
+| `oci_email_email_domain` | 送信するドメイン（`alphajinsei.com`）。DKIM と Return-Path がぶら下がる |
+| `oci_email_dkim` | DKIM の鍵（Email Delivery が作って持つ）。出力の CNAME を Cloudflare に置く |
+| `oci_email_email_return_path` | カスタム Return-Path（`bounce.alphajinsei.com`）。出力の CNAME を Cloudflare に置く |
+| `oci_email_sender` | 承認済みの差出人（`From:` に使ってよいアドレス） |
+| `oci_identity_user` / `group` / `policy` | 中継専用の IAM のユーザー（Postfix が Email Delivery の SMTP にログインするときの身元）。権限は `use approved-senders` だけ |
+| `oci_identity_smtp_credential` | SMTP のユーザー名とパスワード。パスワードは作ったときしか返らないので Vault へ |
+
+DKIM の鍵は自分で作って渡すこともできる（`oci_email_dkim` の `private_key`）。今回は Email Delivery に作らせた。
+
+### 届かなくなるもの
+
+Postfix 自身が作るエラーのメール（`MAILER-DAEMON@alphajinsei.com` から）は承認済みの差出人ではないので、Email Delivery が受け取らない。自分が送ったメールが届かなかったときの知らせは、Email Delivery が `bounce.alphajinsei.com` で受けて処理する（コンソールの抑止リスト）。
+
+### つまずいたこと
+
+- **Return-Path が作れない**（`should have an active DKIM or Domain Verification should be completed`）：Return-Path を作るには、DKIM が Active でなければならない。Active になるのは、Cloudflare に CNAME ができ、Oracle がそれを DNS で見て確かめたあと。Terraform が知っている順番は参照と `depends_on` だけで、「Oracle が DNS を確かめ終わる」という外の出来事は待てない。`depends_on = [cloudflare_dns_record.dkim]` で「CNAME を作ってから」までは保証できるが、確認が済むまでは保証できないので、一から作るときは apply が2回になる。待つ処理（`time_sleep`）は、DNS の確認にかかる時間が読めないので入れなかった。
+- **IAM のユーザーが作れない**（`primaryEmailNotSpecified`）：テナンシーが Identity Domains の形で、ユーザーは人のアカウントとして扱われ、主メールアドレスが必須。昔の IAM の形では要らなかった。コンソールにログインしない「サービス・ユーザー」もあるが、別のリソース（`oci_identity_domains_user`）で SCIM の属性を書くことになり重いので、普通のユーザーに `postmaster@alphajinsei.com` を付けた。
+- そもそも IAM のユーザーが要る理由：Email Delivery の SMTP の口は、IAM のユーザーに発行した SMTP の資格情報（ユーザー名とパスワード）でしかログインできない。VM のインスタンス・プリンシパル（Vault を読むときの身元）は SMTP では使えない。
+- **Outlook から送れない**（`Server 'mail.alphajinsei.com' Port '25' ... 503 5.5.1 Error: authentication not enabled`）：Outlook の送信のポートが既定の 25 のままだった。25番はサーバー同士の口でログインを受けない設計なので、拒否されたのは正しい挙動（「25番でログインさせない」が効いている証拠）。送信を 465・SSL/TLS に直す。
+
+### bounce.alphajinsei.com の CNAME：バウンスを受けるのは Oracle
+
+送り先が存在しないなどで届けられないとき、受け取る側（Gmail など）は、エラーのメール（バウンス）を**封筒の差出人**に送り返す。封筒の差出人は Email Delivery が `...@bounce.alphajinsei.com` に書き換えているので、バウンスは `bounce.alphajinsei.com` の MX に向かう。
+
+```
+Gmail --bounce--> MX of bounce.alphajinsei.com
+                  = (CNAME) -> Email Delivery side name -> Oracle's bounce processor
+                                                           -> suppression list (stop sending to that address)
+```
+
+- CNAME は「この名前の情報は全部あちらを見て」という意味なので、`bounce.alphajinsei.com` の MX（バウンスの受け口）も TXT（SPF）も、Oracle 側のものになる。こちらは CNAME 1本で済み、Oracle が中身を変えても追従する。
+- oci-mail で受けないのは、バウンスを知る必要があるのが Email Delivery だから。届かない宛先に送り続けると送信元の評判が下がるので、Email Delivery はバウンスを受けて抑止リスト（コンソールの Suppressions）に入れ、以後その宛先には送らない。書き換えた封筒の差出人には、どの送信のバウンスかを見分ける印が入っている。
+- 確かめ方：`dig +short MX bounce.alphajinsei.com`（Oracle のサーバーが出る）、`dig +short TXT bounce.alphajinsei.com`（Oracle の SPF が出る）。
+
+### postconf で、効いている設定を見る
+
+- `postconf -M`：master.cf の口の一覧（Ansible が置いたものが読まれているか）。列は、サービス名、種類（`inet` は TCP で待ち受け）、private、unpriv、chroot、wakeup、maxproc、コマンドと `-o` の上書き。`smtp`（25）、`submission`（587）、`submissions`（465）の順に並び、587・465 だけに `smtpd_sasl_auth_enable=yes` と `permit_sasl_authenticated,reject` が付いていれば、口ごとの規則が効いている。chroot の列は n。
+- `postconf relayhost`：main.cf のその設定の今の値。`postconf -n` は既定から変えた設定の全部、`postconf -d` は既定値。ファイルを読むより確かで、書き間違えた設定名は警告が出る。
+
