@@ -6,7 +6,7 @@
 
 - 個人サービスは Cloudflare（Workers + D1 ほか）を標準基盤にし、1サービス＝1ディレクトリでアプリからインフラまで完結させる。方針と理由は [docs/design/](docs/design/)（[全体](docs/design/overview.md)、方式ごとに [Cloudflare](docs/design/cloudflare.md)・[OCI](docs/design/oci.md)、OCI のメール基盤は別冊 [oci-mail](docs/design/oci-mail.md)）。
 - まず標準構成のサンプル（メモ帳アプリ）を、ユーザー自身の手で作ってデプロイし、構成管理まで一通り経験する。手順と進捗は [docs/roadmaps/cloudflare.md](docs/roadmaps/cloudflare.md)（完了）。
-- 次に方式③として、OCI Always Free で共通基盤（LB・Docker ホスト・MySQL HeatWave・メール用 VM など）を作り、その上にサンプルを載せる。手順と進捗は [docs/roadmaps/oci.md](docs/roadmaps/oci.md)。OCI は業務で触っているので粒度は粗め。コマンドはユーザーが打ち、コード生成は Claude が行う。
+- 次に方式③として、OCI Always Free で共通基盤（LB・Docker ホスト・MySQL HeatWave・メール用 VM など）を作り、その上にサンプルを載せる。手順と進捗は [docs/roadmaps/oci.md](docs/roadmaps/oci.md)（完了。DMARC の昇格などは後日）。OCI は業務で触っているので粒度は粗め。コマンドはユーザーが打ち、コード生成は Claude が行う。
 - 学習が終わったら、以降のサービスのデプロイは Claude に任せる。テンプレートは別に作らず、サンプル（GitHub の Template repository）をそのまま使う。
 - サービスを作るときに読む資料は3段：[docs/service-guide.md](docs/service-guide.md)（全方式共通）、基盤ごとの資料（Cloudflare は [docs/platforms/cloudflare.md](docs/platforms/cloudflare.md)、OCI は `oci-platform` の README）、各サンプルの `README.md`（方式ごと。見出しは6つにそろえる）。新しい方式のサンプルを作ったら、ガイドの「方式の一覧」に1行足す。
 - 会話の中で分かったことは [docs/notes/study-notes.md](docs/notes/study-notes.md)（勉強メモ）に短く追記していく。長くなる解説は `docs/notes/extra-*.md`（番外編）に分け、勉強メモからリンクする。
@@ -20,6 +20,7 @@
 │   │   ├── service-guide.md  サービスを作るときに読む（全方式共通）
 │   │   ├── platforms/        基盤ごとの資料（cloudflare。OCI は oci-platform の README）
 │   │   ├── design/           方式の検討（overview / cloudflare / oci / oci-mail）
+│   │   │   └── diagrams/     構成図（.drawio.svg。md から画像として参照）
 │   │   ├── roadmaps/         学習ロードマップ（cloudflare / oci）
 │   │   └── notes/            勉強メモと番外編（extra-*.md）
 │   └── .secrets/           API トークンなどの置き場。git 管理外（.gitignore）

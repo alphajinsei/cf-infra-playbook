@@ -1,6 +1,8 @@
 # 学習ロードマップ：OCI 共通基盤（方式③）
 
-最終更新：2026-11-06
+最終更新：2026-11-07
+
+状態：**完了**（2026-11-07）。8-5 の後日の確認（fail2ban、DMARC のレポート、`p=quarantine` への昇格）は、ロードマップの完了とは切り離して、いつかやる。
 
 ## ゴール
 
@@ -659,7 +661,7 @@ Let's Encrypt の証明書を ACME の HTTP-01 で取り（自動更新）、Dov
   ssh oci-mail 'sudo fail2ban-regex /var/log/mail.log "postfix[mode=auth]" | grep -A2 "^Failregex"'
   ```
 
-- [ ] 1日ほどたってから、外からの失敗で締め出されている IP を見る
+- [ ] 1日ほどたってから、外からの失敗で締め出されている IP を見る（後日）
 
   ```bash
   ssh oci-mail 'sudo fail2ban-client status postfix-sasl; sudo fail2ban-client status dovecot'
@@ -683,8 +685,8 @@ Let's Encrypt の証明書を ACME の HTTP-01 で取り（自動更新）、Dov
   #   消せないことも確かめる：oci os object delete --auth instance_principal --bucket-name mail-backup --name <名前> → 404 NotAuthorizedOrNotFound
   ```
 
-- [ ] DMARC のレポート：1週間ほど、`dmarc@` に届くレポート（Google などから、zip か gz の XML）を開き、自分のメールが全部 `dkim` と `spf` で pass、`disposition` が `none` になっていることを見る
-- [ ] 全部 pass なら、`cloudflare.tf` の DMARC を `p=quarantine` に変えて apply する（変更は Claude に頼む）
+- [ ] DMARC のレポート（後日。最初の1通は 2026-11-07 に読んだ。全部 pass）：1週間ほど、`dmarc@` に届くレポート（Google などから、zip か gz の XML）を開き、自分のメールが全部 `dkim` と `spf` で pass、`disposition` が `none` になっていることを見る
+- [ ] 全部 pass なら、`cloudflare.tf` の DMARC を `p=quarantine` に変えて apply する（変更は Claude に頼む）（後日）
 
 理解ポイント：
 

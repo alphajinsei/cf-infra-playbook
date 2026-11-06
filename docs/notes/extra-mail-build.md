@@ -19,6 +19,25 @@ Internet --25--> smtpd --> cleanup --> queue (qmgr) --+--> virtual : write Maild
                                                       +--> smtp    : other domains (8-4: via Email Delivery)
 ```
 
+### Postfix の主なデーモン（構成図を描くときに整理）
+
+master.cf の1行が1つのデーモン（`master` が起動して見張る）。メールは「受け取る → キュー → 配る」の3段を通る。
+
+| 段 | デーモン | やること | この基盤での使われ方 |
+| --- | --- | --- | --- |
+| 受け取る | smtpd | SMTP のサーバー。つないできた相手と話し、受け取るか断るかを決める。ログインの確認（SASL）と milter もここ | 口は3つで、master.cf の `smtp`（:25）・`submission`（:587）・`submissions`（:465）。プログラムは同じ smtpd で、`-o` で規則を変えている。ログインの確認は Dovecot に、迷惑メールの判定は Rspamd に聞く |
+| | cleanup | ヘッダーを整え、宛先を書き換え（`virtual_alias_maps`）、キューに書く | smtpd から渡される |
+| キュー | qmgr | キューを見て、宛先ごとに配送のデーモンを呼ぶ。失敗したら後で再送 | 宛先から配り方を決めるのは trivial-rewrite（自分のドメイン → `virtual_transport`、それ以外 → `relayhost`） |
+| 配る | lmtp | LMTP のクライアント | 自分宛てを Dovecot に渡す（`virtual_transport = lmtp:unix:private/dovecot-lmtp`） |
+| | smtp | SMTP のクライアント | 外宛てを Email Delivery の :587 に中継する（STARTTLS、`mail-relay` でログイン） |
+| 補助 | bounce・anvil・tlsmgr・scache など | バウンスの通知、接続数の制限、TLS のセッションのキャッシュ | 意識しなくてよい |
+
+- 「受け取る口」は smtpd だけで、3つのポートはどれも smtpd。Postfix が外へ :25 で送ることはない（外宛ては全部 smtp が :587 で中継に渡す）。
+- Dovecot との線は2本あり、出どころが違う。ログインの確認は smtpd から、メールの受け渡し（LMTP）は lmtp から。
+- **ルーティングと同じ考え方**：受け取ったメールは、送信か受信かを区別せずにキューに入り、qmgr が宛先のドメインで行き先を決める。自分のドメインなら `virtual_transport`（lmtp で Dovecot へ）、それ以外は `relayhost`（Email Delivery の :587）。宛先のドメインで引くのがルート表、`relayhost` がデフォルトゲートウェイにあたる（`relayhost` を置かなければ、宛先の MX を DNS で引いて :25 に直接送る。ゲートウェイなしで直接つなぐのと同じ）。
+- ただし、受け取る時点では宛先を見ている。外宛て（中継）を受けるのは、SMTP AUTH が通った相手か `mynetworks` の相手だけ（`smtpd_relay_restrictions`）。だれでも中継できるとオープンリレーになるため。ルーターでいえば、転送する前のフィルタ（ACL）にあたる。
+- **「ログイン」の正体は SMTP AUTH**（RFC 4954）。SMTP の中で SASL の仕組みを使い、ユーザー名とパスワードを送る（方式は PLAIN・LOGIN。どちらもパスワードを平文で送るので、TLS の中でだけ許す）。Outlook からの分は、smtpd が Dovecot に照合を頼む（passwd-file の SHA512-CRYPT のハッシュと比べる）。Email Delivery への中継では、Postfix がクライアントとして IAM ユーザー `mail-relay` の SMTP の資格情報を送る。証明書の確認（相手のサーバーが本物か）とは別の話。
+
 ### アドレスクラス
 
 理解の鍵は、**Postfix が宛先のドメインを「アドレスクラス」に分ける**こと。どのクラスに入るかで、受けるかどうかと、誰が配達するかが決まる。
@@ -427,6 +446,32 @@ Rspamd は、規則（SPF・DKIM・DMARC の結果、本文の特徴、送信元
 - 対象を mail VM だけにするため、動的グループ `platform-mail`（`instance.id` が mail VM）を別に作った。今の `platform-instances` は全 VM で、Vault を読むためのもの。
 - 置き方は mail VM 自身がタイマーで送る形（push）。ops が取りに行く形（pull）だと、ops に `/srv/mail` を読む権限（SSH の鍵など）を持たせることになり、メールが読める場所が増える。
 - tar は動いている最中に読むので、読んでいる間に変わったファイルがあると終了コード 1（警告）になる。Maildir は1通1ファイルで、書き終えてから `new/` に置く（途中のファイルは `tmp/`）ので、取りこぼすのは「その瞬間に届いていた1通」だけ。それは成功として扱う。
+
+### DMARC の集計レポート（rua）
+
+- 送ってくるのは**受け取る側**（Gmail なら `noreply-dmarc-support@google.com`）。DMARC のレコードの `rua=mailto:dmarc@alphajinsei.com` を見て、「`From:` が alphajinsei.com のメールを、どの IP から何通受け取り、SPF・DKIM・DMARC の結果がどうだったか」を1日ごとにまとめて、ドメインの持ち主に送る。
+- 目的は、持ち主が「自分のドメインを名乗って誰が送っているか」を知ること。正規の送り先（Email Delivery）が全部 pass しているか、知らない IP（なりすまし、転送、設定し忘れたサービス）が混じっていないかを見て、安心できたら `p=` を上げる。`p=none` の期間は、このレポートを見るためにある。
+- 中身は件数だけで、本文・件名・宛先は入らない（本文の入る失敗レポート `ruf` は別もので、Gmail は送らない）。添付は zip（中は XML）。ファイル名は `受け取った側!自分のドメイン!開始!終了.xml`（UNIX 時刻、UTC の1日分）。
+- XML の読みどころ：
+
+  | 要素 | 意味 | 見るところ |
+  | --- | --- | --- |
+  | `report_metadata` | 送り主、期間 | `date_range` |
+  | `policy_published` | 受け取った側が見た自分の DMARC（`p`、`adkim`・`aspf` の厳しさ） | 出したレコードどおりか |
+  | `record/row/source_ip`・`count` | どの IP から何通 | Email Delivery（OCI）の IP だけか |
+  | `policy_evaluated` | DMARC の判定（`dkim`・`spf` はアライメント込み）と、実際の扱い（`disposition`：none / quarantine / reject） | 正規の IP が `pass` か |
+  | `identifiers` | `header_from`（`From:` のドメイン）。`envelope_from` を入れる受け取り側もある（Gmail は入れない） | `alphajinsei.com` か |
+  | `auth_results` | アライメントを見る前の生の結果（DKIM の `d=` と selector、SPF のドメイン＝封筒の差出人） | DKIM の `d=alphajinsei.com`、SPF の `bounce.alphajinsei.com` が `pass` か |
+
+- 最初のレポート（Gmail、2026-11-05 UTC の1日分）：Email Delivery の東京の IP（`192.29.44.124`〜`126`）から1通ずつ、計3通。どれも DMARC は pass（DKIM・SPF とも）、扱いは none。知らない IP はなし。
+  - DKIM の署名が2つある。`d=alphajinsei.com`（selector `oci-nrt-20261105`。自分の DKIM）と、`d=nrt1.rp.oracleemaildelivery.com`（Oracle が自分の名前でも署名している。送信元の評判を Oracle 側でも積むため）。DMARC に効くのは、`From:` とそろう前者だけ。
+  - `policy_published` の `sp`（サブドメインの方針。書かないと `p` と同じ）、`np`（存在しないサブドメインの方針。新しい DMARC の仕様の項目）、`pct`（方針を当てる割合。書かないと 100）は、レコードに書いていない既定値。
+- 受け取る側に、送る義務はない。DMARC（RFC 7489）でもレポートを送るかは受け取る側の任意で、送らないところも多い。Google が送るのは、送信ドメインが安心して `p=reject` まで上げてくれると、Gmail の利用者に届くなりすまし（フィッシング）が減り、自分のフィルタの負担も減るから。善意ではなく、受け取る側の利益。DMARC そのものも、Google・Yahoo・Microsoft・PayPal などが作った仕組み。
+- DMARC は「自分のドメインを名乗るメールは、SPF か DKIM が通っていなければ本物ではないので、こう扱ってください」と、受け取る側に頼む仕組み。止めるのは受け取る側で、送る側は頼むだけ（自分以外の偽物の扱いを、自分で宣言する。有名人の「このアカウント以外は偽物です」と同じ）。
+- なりすましに気づいたときに送信側ができること：相手の送信は止められない。できるのは `p=quarantine` / `reject` にして「名乗っても受け取らないで」と受け取る側に頼むことで、レポートは「上げても自分の正規のメールが巻き込まれない」ことの確認に使う。実際によく見つかるのは、なりすましより自分の設定漏れ（DKIM を付け忘れた外のサービスなど）。会社なら、送信元の IP の持ち主への abuse 報告や、利用者への注意喚起もある。似た名前のドメイン（`a1phajinsei.com` など）は DMARC では防げない。
+
+- `p=` の違い（DMARC が fail したメール＝ SPF も DKIM もアライメントで pass しなかったものだけが対象）：`none` は受け取り側の普段の判断のまま（レポートだけ）、`quarantine` は迷惑メールに入れる、`reject` は SMTP の段階で断る。pass している正規のメールは、どれでも変わらない。
+- 上げて困るのは、Email Delivery を通らずに `@alphajinsei.com` を名乗って送るもの（外のサービスに差出人として設定したときなど）と、DKIM の署名を壊す転送（本文や件名を書き換えるメーリングリスト）。レポートで正規の送信が全部 pass なら、上げてよい。
 
 ## 8-6. アプリから：送信元の IP で信頼する
 

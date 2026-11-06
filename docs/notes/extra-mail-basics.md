@@ -111,6 +111,7 @@ DKIM  --> (2) d= of the signature   ---------+--> DMARC: pass if (SPF pass AND a
 
 - **SPF も DKIM も、それだけでは `From:` を守らない。**迷惑メールの送り主も、自分で取ったドメイン `evil.example` で SPF と DKIM を完璧に通したうえで、`From: support@yourbank.com` と書ける。SPF・DKIM が確かめたのは `evil.example` だけ。
 - **DMARC が、SPF・DKIM の結果と `From:` を結び付ける。**`From:` のドメイン（`yourbank.com`）の DMARC のレコードを引き、「SPF か DKIM で通ったドメインが `yourbank.com` と一致しているか」を見る。一致の判定は、既定では親ドメインが同じならよい（relaxed。`bounce.alphajinsei.com` と `alphajinsei.com` は一致とみなす）。
+- **DMARC は、ドメインの持ち主が受け取る側に頼む仕組み。**「自分のドメインを名乗るメールは、SPF か DKIM が通っていなければ本物ではないので、こう扱ってください（none / quarantine / reject）」と DNS で宣言する。止めるのは受け取る側で、送る側は頼むだけ。自分以外の偽物の扱いを、自分で宣言している。SNS で有名人が「このアカウント以外は偽物です」とプロフィールに書くのと同じ空気。
 - 業務でよくある「SPF は通っているのに DMARC で落ちる」は、たいていこのアライメントが原因。外部の配信サービス（SendGrid、Email Delivery など）は、封筒の差出人を**自分のドメイン**にして送る（バウンスを自分で受けるため）。すると SPF は通るが、通ったのは配信サービスのドメインで、`From:` と一致しない。そこで、DKIM を自分のドメインで署名してもらうか、封筒の差出人を自分のサブドメインにしてもらう（カスタム Return-Path）。
 
 ### それぞれの DNS レコード
