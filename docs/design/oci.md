@@ -13,40 +13,59 @@ OCI の Always Free の範囲で、LB・サーバー・DB のそろった「い�
 
 ## 2. 全体の構成
 
-```
-Users
-  |  https://<app>.alphajinsei.com            mail: MX -> mail VM (25/465/587/993)
-  v                                              |
-Cloudflare (DNS / proxy / WAF)                   |
-  |  HTTPS (Cloudflare Origin CA cert)           |
-+-|----------------- VCN 10.0.0.0/16 ------------|---------------------------+
-| |  [Internet GW]                               |                           |
-| v                                              v                           |
-| public-lb  10.0.0.0/24                   public-dmz  10.0.1.0/24           |
-|   Flexible LB (10Mbps)                     mail (A1 1 OCPU / 4GB)          |
-|   host-based routing, 1 backend set/app      mail data in /srv/mail        |
-|     |  TCP 8000-8099                         outbound -> Email Delivery      |
-|     v                                        (relay on 587)                |
-| private-app  10.0.10.0/24                private-ops  10.0.30.0/24         |
-|   app (A1 1 OCPU / 8GB)                    ops (E2.1.Micro)                |
-|   Docker host, 1 container/app             workbench + batch (cron)        |
-|     |  TCP 3306                              |  TCP 3306                   |
-|     v                                        v                             |
-| private-db  10.0.20.0/24                                                   |
-|   MySQL HeatWave (50GB, automatic backups)                                 |
-|                                                                            |
-| [NAT GW]      private-app / private-ops -> internet (apt, docker, APIs)    |
-| [Service GW]  -> OCIR, Object Storage, Vault (no internet)                 |
-| [Bastion]     -> SSH 22 of app / ops / mail (sessions up to 3h)            |
-+----------------------------------------------------------------------------+
-  Object Storage: Terraform state, per-app buckets, backups
-  Vault: DB passwords                    Monitoring + Notifications: alarms -> email
-  Budget: alert when cost > 0
+```mermaid
+flowchart TB
+  users["利用者"] -- "https://アプリ名.alphajinsei.com" --> cf["Cloudflare<br/>DNS・プロキシ・WAF"]
+  peer["メールソフト<br/>よそのメールサーバー"]
+  dev["開発者の PC（WSL）<br/>Terraform・Ansible・npm run deploy"]
+  subgraph vcn["VCN 10.0.0.0/16"]
+    subgraph plb["public-lb 10.0.0.0/24"]
+      lb["Flexible LB（10Mbps）<br/>ホスト名で振り分け<br/>アプリごとのバックエンド・セット"]
+    end
+    subgraph pdmz["public-dmz 10.0.1.0/24"]
+      mailvm["mail（A1 1 OCPU / 4GB）<br/>Postfix・Dovecot<br/>/srv/mail"]
+    end
+    subgraph papp["private-app 10.0.10.0/24"]
+      app["app（A1 1 OCPU / 8GB）<br/>Docker ホスト<br/>アプリごとにコンテナ1つ"]
+    end
+    subgraph pops["private-ops 10.0.30.0/24"]
+      ops["ops（E2.1.Micro）<br/>作業・バッチ（cron）"]
+    end
+    subgraph pdb["private-db 10.0.20.0/24"]
+      db[("MySQL HeatWave<br/>50GB・自動バックアップ")]
+    end
+    nat["NAT GW<br/>apt・docker・外の API"]
+    sgw["Service GW<br/>インターネットを通らない"]
+    bastion["Bastion<br/>セッションは最長3時間"]
+  end
+  subgraph svc["OCI のサービス"]
+    os["Object Storage<br/>state・バケット・バックアップ"]
+    vault["Vault<br/>パスワード"]
+    ed["Email Delivery"]
+    mon["Monitoring・Notifications<br/>Logging・Budget"]
+  end
 
-Dev PC (WSL) -- Terraform ----------------------> OCI resources, Cloudflare DNS
-Dev PC (WSL) -- Ansible (ssh via Bastion) ------> inside of VMs
-Dev PC (WSL) -- npm run deploy -----------------> rsync source -> build on app VM
+  cf -- "HTTPS（Origin 証明書）" --> lb
+  lb -- "TCP 8000-8099" --> app
+  app -- "3306" --> db
+  ops -- "3306" --> db
+  peer -- "25・465・587・993<br/>（プロキシなし）" --> mailvm
+  mailvm -- "587（外へのメールの中継）" --> ed
+  app -.-> nat
+  ops -.-> nat
+  app -.-> sgw
+  ops -.-> sgw
+  sgw -.-> os
+  sgw -.-> vault
+  dev -- "ssh（Ansible・デプロイ）" --> bastion
+  bastion -- "22" --> app
+  bastion -- "22" --> ops
+  bastion -- "22" --> mailvm
+  dev -- "Terraform" --> svc
+  dev -- "Terraform（DNS）" --> cf
 ```
+
+実線は通信の経路、点線は外へ出る経路（NAT GW・Service GW）。Internet GW は public-lb と public-dmz の出入りに使う（図では省いた）。メールの中の構成は [oci-mail の 4](oci-mail.md#4-構成)。
 
 | 層 | 使うもの | 役割 |
 | --- | --- | --- |
@@ -92,7 +111,7 @@ Dev PC (WSL) -- npm run deploy -----------------> rsync source -> build on app V
 
 - ブートボリュームは 47GB より小さくできない。そのため、VM 4台に別のボリュームを足すと 200GB を超える。マイクロ2台に A1 2台（4台）は入るが、余りがなくなる。そこでマイクロは1台に減らした。
 - コンテナイメージは1つ数百MB で、`docker image prune` で古いものを消せば、ブートボリュームで足りる。足りなくなったら、ブートボリュームを止めずに大きくできる。
-- ブロックボリュームは使わない。最小が 50GB で枠を大きく食う一方、利点は「VM を作り直してもデータが残る」ことだけ。メールのデータはブートボリュームの `/srv/mail` に置き、ブートボリュームのバックアップと、Object Storage への定期的な退避で守る（Step 8）。
+- ブロックボリュームは使わない。最小が 50GB で枠を大きく食う一方、利点は「VM を作り直してもデータが残る」ことだけ。メールのデータはブートボリュームの `/srv/mail` に置き、Object Storage への定期的な退避で守る（11 の「バックアップの方式」）。
 - あとでブロックボリュームに移すときは、ボリュームを付ける → メールを止める → `/srv/mail` を rsync でコピー → `/srv/mail` にマウントし直す、で済む（30分ほど）。そのために、メールのデータは最初から `/srv/mail` にまとめる。
 - app のデータは HeatWave と Object Storage に置くので、作り直しても消えない。
 - バックアップ：ボリュームのバックアップは5つまで無料。
@@ -371,7 +390,32 @@ Dev PC (WSL)
 | Budget | 予算アラート（金額が0円を超えたら通知）。枠を超えて課金されたことに気付くため |
 | OS の更新（自動） | unattended-upgrades でセキュリティの更新だけ毎日入れる。**自動で再起動しない。Docker 本体は対象外**。needrestart にも Docker を再起動させない。Docker は `live-restore` で、デーモンが再起動してもコンテナを止めない。これで、勝手にコンテナが止まることはない |
 | OS の更新（手動） | 月に1回などで `ansible-playbook upgrade.yml`。カーネルと Docker も含めて全部更新し、再起動が要る VM だけ1台ずつ再起動する（その間、その VM のコンテナは1〜2分止まる）。コンテナの中身は OS の更新では直らないので、イメージの作り直し（デプロイ）で更新する |
-| バックアップ | HeatWave は OCI の既定の自動バックアップ（Always Free では設定を指定できない）。メールのデータ（`/srv/mail`）は Object Storage に定期的に退避する（Step 8）。VM はブートボリュームのバックアップ（5つまで無料）。Terraform の state はバケットのバージョニング |
+| バックアップ | 「作り直せないものだけを取る」。取るのは HeatWave（自動バックアップ）、`/srv/mail`（週1回、Object Storage）、Terraform の state（バージョニング）。VM は取らず、Terraform + Ansible で作り直す。詳しくは下の「バックアップの方式」 |
+
+### バックアップの方式
+
+考え方：**作り直せるものは取らない。作り直せないもの（人やアプリが書いたデータ）だけを取る。** VM の中身は、Terraform と Ansible と git で作り直せる状態を保つ。
+
+| 対象 | 中身 | 取り方 | 戻し方 |
+| --- | --- | --- | --- |
+| HeatWave | アプリのデータ | OCI の自動バックアップ（Always Free では既定のまま。有効、保存1日） | コンソールでバックアップから DB システムを作る |
+| mail VM の `/srv/mail` | メールボックス（Maildir） | 毎週日曜 3:30 に tar.gz にして Object Storage の `mail-backup` へ（mail VM の systemd のタイマー）。14日でライフサイクルが消すので2世代 | mail VM で取り出して展開する |
+| Terraform の state | 作ったものの記録 | バケット `tfstate` のバージョニング | 前の版を戻す |
+| Vault | パスワード | 取らない。`prevent_destroy` で消えないようにしている（値は state にも残る） | ― |
+
+取らないもの：
+
+| 対象 | 理由 |
+| --- | --- |
+| VM（ブートボリューム） | 設定は Ansible、ソースは git、イメージはデプロイのときに作り直し、`.env` は Vault から書き直す。ブートボリュームのバックアップ（5つまで無料）は使わない |
+| app VM のアプリ | アプリはステートレスに作る（9 の「アプリが守ること」）。状態は DB と Object Storage に置く |
+| mail VM の `/srv/mail` 以外 | 証明書は certbot で取り直す。Rspamd の Redis（学習の結果）は消えてもよい。Postfix のキューの中（送っている途中のもの）は一時的なものとして割り切る |
+| ops VM | 作業用の場所。残したいもの（cron の処理など）は git に入れる |
+| 手元の PC の鍵（OCI の API キー、SSH の鍵） | なくしてもコンソールから作り直せる |
+
+- `/srv/mail` の置き場の権限は「置く・一覧・取り出す」だけ。mail VM が乗っ取られても、過去のバックアップは消されない。消すのは Object Storage のライフサイクルだけ（[oci-mail の 9](oci-mail.md#9-運用)）。
+- 頻度と世代は、無料枠（Object Storage は合計 20GB）を無駄に食わない程度にした（週1回・2世代）。
+- ライフサイクルは、バックアップの成否に関係なく古いものを消す。2週続けて失敗すると何も残らないので、ときどき `oci os object list --bucket-name mail-backup` で日付を見る（失敗の通知は入れていない）。
 
 ## 12. 要確認のまとめ
 
@@ -403,3 +447,5 @@ Dev PC (WSL)
 14. **イメージの運び方：OCIR → app VM の上でビルド**：手元（x86）と app（arm64）で CPU が違い、OCIR を使っても手元で確かめたイメージそのものは運べない。レジストリの認証トークンを増やさず、0円が確実な、app の上でのビルドにした（8）。
 15. **監視の範囲：止まったことだけ**：最初は CPU・メモリ・HeatWave の容量も見る案だった。しかし Always Free では拡張の余力がなく、高騰を知っても打つ手がない。アラームはアプリと VM の停止の2つに絞り、LB のログだけ OCI Logging に入れた（11）。
 16. **メール基盤を別冊に**：要件と方式を詰めると1節に収まらないので、[oci-mail.md](oci-mail.md) に分けた。方式は部品を自分で組む形（Postfix・Dovecot・Rspamd）、閲覧はメールソフトから、アプリからの送信は mail VM を通す（10）。
+17. **構成図を Mermaid に**：ASCII の図は、部品が増えるたびに枠と線を引き直す必要があった。Mermaid ならテキストで差分が追え、GitHub でそのまま描かれる（2）。
+18. **バックアップは作り直せないものだけ**：当初は VM のブートボリュームのバックアップも併用する案だったが、VM は Terraform + Ansible で作り直せるので取らないことにした。メールは毎日・30日の案から、無料枠を食わないよう週1回・2世代にした（11）。

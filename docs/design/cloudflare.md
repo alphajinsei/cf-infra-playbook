@@ -1,6 +1,6 @@
 # 個人サービス公開インフラ 方式検討：Cloudflare（方式⓪①②）
 
-最終更新：2026-11-03
+最終更新：2026-11-05
 
 個人サービスは Cloudflare（Workers + D1 ほか）を標準基盤とし、1サービス＝1ディレクトリでアプリからインフラまで完結させる。要件と方式の一覧は [全体](overview.md)、方式③は [OCI](oci.md) に分けた。
 
@@ -109,6 +109,20 @@ my-service/
 - ブランチごとのプレビューは使わない。確かめるのは `wrangler dev` で行う。プレビューを使うと本番と同じ D1 につながり、本番のデータに触れてしまう。
 
 ### 静的サイト（方式①）と既存の Pages
+
+```mermaid
+flowchart LR
+  user["利用者<br/>ブラウザ"] --> dns
+  subgraph cf["Cloudflare（エッジ）"]
+    dns["DNS / CDN"] --> static["① Worker（main なし）<br/>assets: ./dist"]
+    dns --> pages["⓪ Pages<br/>dia-logos"]
+  end
+  dev["開発者の PC<br/>astro build"] -- "npm run deploy<br/>（wrangler deploy）" --> static
+  dev -- "git push" --> gh["GitHub"]
+  gh -- "push を Pages が拾ってビルド" --> pages
+```
+
+①は②と同じく手元から出し、GitHub は保管場所。⓪だけは GitHub への push がそのままデプロイになる。
 
 | | アプリ（方式②） | 静的サイト（方式①、SSG） |
 | --- | --- | --- |

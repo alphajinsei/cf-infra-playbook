@@ -370,3 +370,61 @@ Gmail --bounce--> MX of bounce.alphajinsei.com
 - `postconf -M`：master.cf の口の一覧（Ansible が置いたものが読まれているか）。列は、サービス名、種類（`inet` は TCP で待ち受け）、private、unpriv、chroot、wakeup、maxproc、コマンドと `-o` の上書き。`smtp`（25）、`submission`（587）、`submissions`（465）の順に並び、587・465 だけに `smtpd_sasl_auth_enable=yes` と `permit_sasl_authenticated,reject` が付いていれば、口ごとの規則が効いている。chroot の列は n。
 - `postconf relayhost`：main.cf のその設定の今の値。`postconf -n` は既定から変えた設定の全部、`postconf -d` は既定値。ファイルを読むより確かで、書き間違えた設定名は警告が出る。
 
+## 8-5. 守り：Rspamd・fail2ban・バックアップ
+
+### 受け取りの途中で判定する：milter
+
+```
+Gmail --25--> Postfix (smtpd) --milter (localhost:11332)--> Rspamd --> score, action, headers
+                   |  <-- accept / reject / add header -----------------|
+                   v
+              Dovecot LMTP --> Sieve (X-Spam: Yes ? -> Junk) --> Maildir
+```
+
+- milter は「Postfix が受け取っている最中に、メールを別のプログラムに見せて判定をもらう」仕組み（もとは sendmail の仕組みで、Postfix も同じ形で話せる）。受け取りの途中なので、拒否するなら SMTP の応答（554）で送り手に返せる。受け取ってから捨てるのと違い、送り手に「届かなかった」が正しく伝わり、バウンスを自分で作らなくて済む。
+- `milter_default_action = accept`：Rspamd が止まっていたら、判定なしで受け取る。迷惑メールが素通りするほうが、止まっている間のメールを失うよりよい、という判断。
+- 465・587番（ログインした人の送信）も milter を通るが、master.cf の `milter_macro_daemon_name=ORIGINATING` で Rspamd に「内から外へのメール」と伝わり、迷惑メールの判定はされない（自分で署名する DKIM の鍵を置けば、ここで署名もできる）。
+
+### 点数と扱い
+
+Rspamd は、規則（SPF・DKIM・DMARC の結果、本文の特徴、送信元の IP の評判、DNSBL など）ごとに点を足し引きし、合計で扱いを決める。
+
+| 合計 | 扱い | 誰がやるか |
+| --- | --- | --- |
+| 15点以上 | 受け取りを拒否（554） | Rspamd → Postfix |
+| 6点以上 | `X-Spam: Yes` などのヘッダーを付けて受け取る | Rspamd → Postfix |
+| （同上） | Junk に入れる | Dovecot の Sieve（`sieve_before`） |
+| それ未満 | 普通に受け取る | ― |
+
+- 判定（Rspamd）と振り分け（Sieve）を分けておくと、Rspamd を替えても、ユーザーごとの振り分けを足しても、互いに影響しない。
+- 既定の greylist（4点以上の初めての相手を一度断り、再送してくるかを見る）は切った。まともなサーバーは数分後に再送するが、試すときに届かないように見えて紛らわしい。
+- GTUBE は、迷惑メールの判定の試験用に決められた文字列。これを含むメールは、中身にかかわらず迷惑メールとして扱われる（ウイルス対策の EICAR と同じ考え方）。
+- 付けるヘッダー：`X-Spamd-Result`（点数と当たった規則の一覧）、`X-Spam-Status`、`Authentication-Results`。受け取ったメールの SPF・DKIM・DMARC の結果を、自分のサーバーでも読めるようになる（8-2 では Gmail の側でしか見られなかった）。
+
+### fail2ban：ログを読んで、iptables に締め出しを足す
+
+```
+/var/log/mail.log --(filter: regex per jail)--> count failures per IP
+                     5 in 10 min --> iptables: f2b-<jail> chain, REJECT that IP on all ports, for 1 hour
+```
+
+- jail（見張りの単位）＝「どのログを、どの正規表現（filter）で読み、どう締め出すか（action）」。今回は `postfix-sasl`（465・587番のログインの失敗）と `dovecot`（IMAP のログインの失敗）。
+- `ignoreip = 10.0.0.0/16`：VCN の中は締め出さない。ops からの試験や app からの送信で、自分の VM を締め出さないため。そのため ops から試すと失敗の数は増えない。filter が行を拾えるかだけを `fail2ban-regex` で確かめる。
+- `iptables-allports`：失敗した IP の全ポートを閉じる。ログインを総当たりしてくる相手に、ほかのポートを開けておく理由はない。
+- fail2ban のルールは iptables に直接足される。common の「Reload iptables」は `iptables-restore` でフラッシュするので消える。Docker と同じく、動いていれば再起動して足し直させる（締め出し中の IP は fail2ban の DB に残っていて、再起動で戻る）。
+- SSH の jail（Ubuntu の既定で有効）は切った。22番は Bastion からしか届かない（NSG）。
+
+### バックアップ：置けるが消せない権限
+
+| 権限 | mail VM | 理由 |
+| --- | --- | --- |
+| 置く（OBJECT_CREATE） | できる | 週1回のバックアップ |
+| 一覧・取り出す（INSPECT・READ） | できる | 戻すとき |
+| 上書き・消す（OVERWRITE・DELETE） | **できない** | mail VM が乗っ取られても、過去のバックアップは消されない（ランサムウェア対策の考え方） |
+| 14日で消す（週1回なので2世代） | Object Storage のライフサイクル | 消すのは、mail VM ではなく Object Storage のサービス自身（`Allow service objectstorage-ap-tokyo-1 ...` のポリシーが要る） |
+
+- ポリシーは `manage objects` に `where` で権限を絞る形。OCI の動詞（inspect / read / use / manage）は段階的に権限を含むので、「作れるが消せない」は動詞だけでは書けず、`request.permission` で1つずつ選ぶ。
+- 対象を mail VM だけにするため、動的グループ `platform-mail`（`instance.id` が mail VM）を別に作った。今の `platform-instances` は全 VM で、Vault を読むためのもの。
+- 置き方は mail VM 自身がタイマーで送る形（push）。ops が取りに行く形（pull）だと、ops に `/srv/mail` を読む権限（SSH の鍵など）を持たせることになり、メールが読める場所が増える。
+- tar は動いている最中に読むので、読んでいる間に変わったファイルがあると終了コード 1（警告）になる。Maildir は1通1ファイルで、書き終えてから `new/` に置く（途中のファイルは `tmp/`）ので、取りこぼすのは「その瞬間に届いていた1通」だけ。それは成功として扱う。
+

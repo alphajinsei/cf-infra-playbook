@@ -613,9 +613,85 @@ Let's Encrypt の証明書を ACME の HTTP-01 で取り（自動更新）、Dov
 
 ### 8-5. 守り
 
-- [ ] Rspamd（受け取ったメールの判定）と fail2ban
-- [ ] `/srv/mail` のバックアップ（Object Storage へ）
-- [ ] DMARC のレポートを読む。`p=quarantine` に上げる
+受け取ったメールを Rspamd に点数付けさせ（6点以上は Junk へ、15点以上は拒否）、ログインの失敗が続く IP を fail2ban で締め出し、`/srv/mail` を週に1回 Object Storage に退避する（2世代）。最後に、DMARC のレポートを見て `p=quarantine` に上げる。
+
+- [x] バックアップの置き場（バケット `mail-backup`、14日で消すライフサイクル、mail VM だけが置ける・読めるポリシー）を作る
+
+  ```bash
+  cd ~/claude-sandbox/oci-platform/terraform
+  ./tf.sh apply
+  ```
+
+- [x] Rspamd・Sieve・fail2ban・バックアップのタイマーを入れる
+
+  ```bash
+  cd ../ansible
+  ansible-playbook site.yml --limit mail
+  ssh oci-mail 'sudo rspamadm configtest; sudo postconf smtpd_milters; sudo doveconf -n | grep sieve; sudo fail2ban-client status; systemctl list-timers mail-backup.timer'
+  ```
+
+- [x] Rspamd：Gmail から `alphajinsei@alphajinsei.com` に送り、Outlook で「ソースを表示」して、`X-Spamd-Result`（点数と当たった規則）、`X-Spam-Status: No`、Rspamd の `Authentication-Results`（`spf=pass`、`dkim=pass`、`dmarc=pass`）を見る
+- [x] Rspamd：ops から、迷惑メールの試験用の文字列（GTUBE）を含むメールが拒否されることを確かめる
+
+  ```bash
+  ssh oci-ops
+  swaks --server 10.0.1.10 --to alphajinsei@alphajinsei.com --from test@example.com \
+    --body 'XJS*C4JDBQADN1.NSBN3*2IDNEN*GTUBE-STANDARD-ANTI-UBE-TEST-EMAIL*C.34X'
+  #   554 5.7.1 Gtube pattern などで拒否される
+  ```
+
+- [x] Rspamd の画面を SSH のトンネルで開き、「History」で今のメールの点数と規則を見る（手元の 11334番を mail VM の 11334番につなぐ）
+
+  ```bash
+  ssh -N -L 11334:localhost:11334 oci-mail
+  #   ブラウザで http://localhost:11334（mail VM の中からの接続になるので、パスワードは要らない）。Ctrl+C で閉じる
+  ```
+
+- [x] fail2ban：ops から間違ったパスワードでログインし、そのログの行を fail2ban の規則が拾うことを確かめる（ops は締め出さない設定なので、数は増えない。数えるのは外からの失敗だけ）
+
+  ```bash
+  ssh oci-ops
+  swaks --server 10.0.1.10 --port 587 --tls --auth LOGIN \
+    --auth-user alphajinsei@alphajinsei.com --auth-password wrong \
+    --to alphajinsei@gmail.com --from alphajinsei@alphajinsei.com
+  #   535 5.7.8 Error: authentication failed
+  exit
+  ssh oci-mail 'sudo fail2ban-regex /var/log/mail.log "postfix[mode=auth]" | grep -A2 "^Failregex"'
+  ```
+
+- [ ] 1日ほどたってから、外からの失敗で締め出されている IP を見る
+
+  ```bash
+  ssh oci-mail 'sudo fail2ban-client status postfix-sasl; sudo fail2ban-client status dovecot'
+  ```
+
+- [x] バックアップ：タイマーを待たずに1回動かし、バケットに置かれたことを確かめる
+
+  ```bash
+  ssh oci-mail 'sudo systemctl start mail-backup.service; sudo journalctl -u mail-backup.service -n 5 --no-pager'
+  oci os object list --bucket-name mail-backup --query 'data[].{name:name,size:size}' --output table
+  ```
+
+- [x] 戻せることを確かめる（mail VM の上で、/tmp に取り出して中を見るだけ。`/srv/mail` は触らない）
+
+  ```bash
+  ssh oci-mail
+  oci os object get --auth instance_principal --bucket-name mail-backup \
+    --name <上の一覧の名前> --file /tmp/restore.tar.gz
+  tar -tzf /tmp/restore.tar.gz | head
+  rm /tmp/restore.tar.gz
+  #   消せないことも確かめる：oci os object delete --auth instance_principal --bucket-name mail-backup --name <名前> → 404 NotAuthorizedOrNotFound
+  ```
+
+- [ ] DMARC のレポート：1週間ほど、`dmarc@` に届くレポート（Google などから、zip か gz の XML）を開き、自分のメールが全部 `dkim` と `spf` で pass、`disposition` が `none` になっていることを見る
+- [ ] 全部 pass なら、`cloudflare.tf` の DMARC を `p=quarantine` に変えて apply する（変更は Claude に頼む）
+
+理解ポイント：
+
+- milter：Postfix が受け取りの途中で、メールを Rspamd に見せて判定をもらう仕組み。Rspamd が止まっていたら、判定なしで受け取る（`milter_default_action = accept`）。
+- 点数と扱い（拒否・ヘッダーの追加）は Rspamd、Junk への振り分けは Dovecot の Sieve。役割が分かれている。
+- fail2ban は、ログを読んで iptables に締め出しのルールを足すだけ。common の iptables の読み直しで消えるので、再起動して足し直させる。
+- バックアップの権限は「置く・読む」だけ。mail VM が乗っ取られても、過去のバックアップは消されない。
 
 ### 8-6. アプリから
 

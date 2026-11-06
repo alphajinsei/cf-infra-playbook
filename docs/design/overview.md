@@ -1,6 +1,6 @@
 # 個人サービス公開インフラ 方式検討：全体
 
-最終更新：2026-11-03
+最終更新：2026-11-05
 
 個人サービスを公開する基盤を、どの方式で持つかの検討の入口。全方式に共通の要件と方式の一覧をここに置き、方式ごとの構成と検討の経緯は、それぞれの資料に分ける。
 
@@ -32,6 +32,37 @@
 ## 方式の一覧
 
 新しいサービスはまず標準方式（①②）で作り、そこで実現できないときだけ他の方式を使う。既存の Pages のサイトは⓪として、そのまま残す。
+
+```mermaid
+flowchart LR
+  user["利用者<br/>ブラウザ"] --> dns
+  peer["メールソフト<br/>よそのメールサーバー"]
+  dev["開発者の PC<br/>WSL"]
+  gh["GitHub"]
+  subgraph cf["Cloudflare"]
+    dns["DNS・プロキシ・WAF<br/>名前.alphajinsei.com"]
+    pages["⓪ Pages<br/>既存の静的サイト"]
+    static["① Workers Static Assets<br/>静的サイト"]
+    worker["② Workers + D1<br/>アプリ + DB"]
+  end
+  subgraph oci["OCI Always Free（③）"]
+    lb["Flexible LB"] --> app["app VM<br/>Docker（アプリごとにコンテナ）"]
+    app --> db[("MySQL HeatWave")]
+    mail["mail VM<br/>Postfix・Dovecot"]
+  end
+  dns --> pages
+  dns --> static
+  dns --> worker
+  dns -- "HTTPS" --> lb
+  peer -- "MX・mail（プロキシなし）" --> mail
+  dev -- "npm run deploy" --> static
+  dev -- "npm run deploy" --> worker
+  dev -- "npm run deploy" --> app
+  dev -- "git push" --> gh
+  gh -- "push で Pages が拾う" --> pages
+```
+
+Web の入口はどの方式も Cloudflare の DNS とプロキシで、DNS の向け先を変えるだけで方式をまたいで移せる。メールだけは Cloudflare を通らず、mail VM に直接届く。
 
 | 方式 | 構成 | 使う場面 | 資料 |
 | --- | --- | --- | --- |

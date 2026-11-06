@@ -52,7 +52,7 @@
 
 ## 4. 構成
 
-実線は Step 8-4 までに作ったもの、点線の枠は 8-5・8-6 で足すもの。
+実線は Step 8-5 までに作ったもの、点線の枠は 8-6 で足すもの。
 
 ```mermaid
 flowchart LR
@@ -69,7 +69,8 @@ flowchart LR
       dov["Dovecot<br/>IMAP :993・LMTP・認証"]
       box[("Maildir<br/>/srv/mail")]
       cb["certbot :80<br/>証明書の取得と更新"]
-      rs["Rspamd・fail2ban<br/>（8-5）"]
+      bk["mail-backup.timer<br/>週1回"]
+      rs["Rspamd（milter）・fail2ban"]
     end
     app["app VM のコンテナ<br/>（8-6）"]
     vault["Vault<br/>メールと中継のパスワード"]
@@ -77,6 +78,7 @@ flowchart LR
   end
 
   ext -- "25（STARTTLS）" --> pf25
+  pf25 -. "milter（判定）" .-> rs
   pf25 -- "LMTP" --> dov
   dov --> box
   mua -- "993（IMAPS）" --> dov
@@ -88,8 +90,8 @@ flowchart LR
   ext -. "MX・SPF・DKIM・DMARC を引く" .-> dns
   le -- "80（HTTP-01）" --> cb
   vault -. "Ansible が platform-secret で読む" .-> mailvm
+  bk -- "tar.gz（2世代）" --> objst["Object Storage<br/>mail-backup"]
   app -. "587" .-> pfsub
-  style rs stroke-dasharray: 5 5
   style app stroke-dasharray: 5 5
 ```
 
@@ -127,9 +129,9 @@ sequenceDiagram
 | --- | --- |
 | Postfix | MTA（25番）と MSA（465・587番）。受けたメールを Dovecot に渡し、送るメールを Email Delivery に中継する |
 | Dovecot | IMAP（993番）、メールボックスへの保存（LMTP）、ログインの確認（Postfix の SASL もここを使う） |
-| Rspamd（と Redis）（8-5） | 受け取ったメールの点数付け（迷惑メールの判定、SPF・DKIM・DMARC の確認）。送るメールへの DKIM の署名 |
+| Rspamd（と Redis） | 受け取ったメールの点数付け（迷惑メールの判定、SPF・DKIM・DMARC の確認）。送るメールへの DKIM の署名 |
 | certbot | Let's Encrypt の証明書の取得と自動更新 |
-| fail2ban（8-5） | ログインの失敗が続く IP を、しばらく締め出す |
+| fail2ban | ログインの失敗が続く IP を、しばらく締め出す |
 
 - すべて Ubuntu のパッケージで入れ、Ansible のロール `mail` にする。Docker は使わない（メールは状態を持ち、ポートを直接受けるので、VM 単体で動かす。[oci.md の 2](oci.md#2-全体の構成)）。
 - メールボックスは Maildir（1通1ファイル）で `/srv/mail` に置く（[oci.md の 3](oci.md#3-always-free-の枠と割り振り)）。
@@ -194,7 +196,7 @@ Cloudflare に置き、oci-platform の `cloudflare.tf` で Terraform が持つ�
 
 | もの | 使い方 |
 | --- | --- |
-| バックアップ | `/srv/mail` を Object Storage に定期的に退避する（ops か mail の cron）。ブートボリュームのバックアップも併用 |
+| バックアップ | `/srv/mail` を毎週日曜 3:30 に tar.gz にして Object Storage（`mail-backup`）に置く（mail VM の systemd のタイマー）。14日でライフサイクルが消すので、残るのは2世代（無料枠の 20GB を食わないため）。mail VM の権限は置く・読むだけで、消す・上書きはできない（乗っ取られても過去の分は残る）。ブートボリュームのバックアップも併用 |
 | 監視 | VM の停止は Step 7 のアラーム。メールの中の異常（キューの詰まり、証明書の期限）は、まずは手で見る |
 | ログ | `/var/log/mail.log`（Postfix と Dovecot）。送れなかったメールは `postqueue -p` |
 | 証明書 | certbot の systemd のタイマーが1日2回確かめ、期限の30日前から更新する。更新したら deploy フック（`/etc/letsencrypt/renewal-hooks/deploy/reload-mail.sh`）で Postfix と Dovecot を読み直す |
@@ -217,3 +219,4 @@ Cloudflare に置き、oci-platform の `cloudflare.tf` で Terraform が持つ�
 7. **メールのパスワードは Terraform → Vault**：DB のパスワードと同じ形。ハッシュを公開リポジトリに置く案は、弱いパスワードだと手元で総当たりされるので見送った（7）。
 8. **DKIM は Email Delivery に署名してもらう**：鍵の管理と DNS（CNAME）が Terraform だけで済み、Email Delivery の送信の上限の引き上げにも DKIM が要る。自分で署名する（Rspamd）のは学びのために後から足せる（5）。
 9. **構成図を Mermaid にした**：8-4 で送受信がそろったところで、作ったとおりの構成（Rspamd・fail2ban・アプリからの送信は点線）と、送信・受信の流れを図にした。GitHub でそのまま描かれる。
+10. **守り（8-5）の形**：Rspamd は Postfix の milter にし、止まっていても受け取る（`accept`）。拒否は15点以上だけにし、6点以上は Dovecot の Sieve で Junk に入れる（人が見て判断できる）。greylist は届くのが遅れて紛らわしいので切った。fail2ban は VCN の中を除き、失敗が続いた IP の全ポートを1時間閉じる。バックアップは mail VM 自身が置く形（ops から取りに行くより、`/srv/mail` を読む権限を広げずに済む）にし、消す権限は与えない。頻度は週1回・2世代にした（毎日・30日は、無料枠の Object Storage を無駄に食う）。
