@@ -428,3 +428,28 @@ Rspamd は、規則（SPF・DKIM・DMARC の結果、本文の特徴、送信元
 - 置き方は mail VM 自身がタイマーで送る形（push）。ops が取りに行く形（pull）だと、ops に `/srv/mail` を読む権限（SSH の鍵など）を持たせることになり、メールが読める場所が増える。
 - tar は動いている最中に読むので、読んでいる間に変わったファイルがあると終了コード 1（警告）になる。Maildir は1通1ファイルで、書き終えてから `new/` に置く（途中のファイルは `tmp/`）ので、取りこぼすのは「その瞬間に届いていた1通」だけ。それは成功として扱う。
 
+## 8-6. アプリから：送信元の IP で信頼する
+
+```
+container (app VM, 10.0.10.x after Docker NAT) --25, no login--> Postfix (mynetworks: 127.0.0.0/8 10.0.10.0/24)
+   From: "sample-oci-vm-docker" <noreply@alphajinsei.com>        |  permit_mynetworks -> relay allowed
+                                                                v
+                                                     Email Delivery (approved sender noreply@ ?) --> Gmail
+```
+
+- `mynetworks` は「ログインなしで、よそのドメイン宛てを中継してよい相手」。25番の `smtpd_relay_restrictions = permit_mynetworks, reject_unauth_destination` の最初の条件に当たるので、app VM からは外へ送れる。外のサーバーは2つめの条件で、自分のドメイン宛てだけになる（オープンリレーにはならない）。
+- 認証の案は3つ比べた（アプリごとのパスワードを共通基盤の一覧で持つ、Vault から定期的に取り込む）。どちらも、アプリを足すときの手間か、仕組みの分かりにくさが増える。自分のシステムの中は信じる、で十分とした。
+- 外へ出られる差出人は Email Delivery の承認済みの差出人で縛られる。アプリが `From:` を間違えても、勝手なアドレスで外へ出ることはない。
+- コンテナごとに絞れない理由：Docker のコンテナから外への通信は、app VM の IP に書き換えられて（NAT）出ていく。mail VM から見ると、どのコンテナも同じ送信元に見える。Kubernetes なら NetworkPolicy の egress で、名前空間やラベル（コンテナの単位）ごとに「mail VM の 25番に出てよいか」を決められる。Docker で同じことをするなら、app VM の iptables の `DOCKER-USER` チェーンで、コンテナのネットワークごとに 25番への通信を許す・止める形になる。
+- 送る口は3種類。同じ 25番でも、送信元で扱いが変わる。
+
+  | 送る人 | ポート | ログイン | 送れる宛先 |
+  | --- | --- | --- | --- |
+  | 手元のメールソフト | 465（最初から TLS）か 587（STARTTLS） | する（`alphajinsei@alphajinsei.com`） | どこでも |
+  | アプリのコンテナ | 25 | しない（`mynetworks` に入っている） | どこでも |
+  | よそのメールサーバー | 25 | しない（`mynetworks` に入っていない） | 自分のドメインだけ |
+
+- つなぐ名前：`mail.alphajinsei.com` は公開 IP を指す。app VM（private）から公開 IP へは NAT ゲートウェイを通って VCN の外を回り、mail VM には NAT の公開 IP から来たように見えるので、`mynetworks` に当たらず中継を断られる。そこで VCN の中の名前 `mail.dmz.platform.oraclevcn.com`（`hostname_label`.サブネットの DNS ラベル.VCN の DNS ラベル.oraclevcn.com。VCN の DNS が private IP を返す）でつなぐ。`oci-mail` は手元の `~/.ssh/config` の別名なので、コンテナからは引けない。
+- 証明書の名前：nodemailer は 25番で STARTTLS が出ていれば自動で TLS に切り替え、証明書を検証する。証明書は `mail.alphajinsei.com` 用なので、VCN の中の名前でつなぐと名前が合わずに失敗する。`servername` で「この名前の証明書のはず」と教えるだけで、検証そのものはふつうの TLS と同じ。ほかに、検証しない（`rejectUnauthorized: false`）、TLS を使わない（`ignoreTLS: true`）もあるが、手間が変わらないので検証を残した。
+- 手元では Mailpit（SMTP を受けて画面に出すだけの開発用のサーバー）に送る。本物の宛先に間違って送らずに、中身を確かめられる。確かめられるのはアプリのコードまで（nodemailer の設定、環境変数、差出人の表示名や本文、ビルド）。Mailpit は何でも受け取り、STARTTLS も出さないので、経路（NSG）・`mynetworks`・TLS・Email Delivery への中継・SPF/DKIM/DMARC は本番で確かめる。
+

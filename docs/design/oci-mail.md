@@ -1,6 +1,6 @@
 # 個人サービス公開インフラ 方式検討：OCI のメール基盤
 
-最終更新：2026-11-05
+最終更新：2026-11-06
 
 [方式検討：OCI](oci.md) の別冊。共通基盤の mail VM に、`alphajinsei.com` のメールの送受信の基盤を作る。仕組みの基礎は [番外編：メールの仕組み](../notes/extra-mail-basics.md)、組みながら分かったことは [番外編：メールサーバーを組む](../notes/extra-mail-build.md)、手順は [学習ロードマップ：OCI](../roadmaps/oci.md) の Step 8。
 
@@ -52,7 +52,7 @@
 
 ## 4. 構成
 
-実線は Step 8-5 までに作ったもの、点線の枠は 8-6 で足すもの。
+Step 8-6 までに作ったもの。実線はメールの流れ、点線は確認や管理の流れ。
 
 ```mermaid
 flowchart LR
@@ -72,7 +72,7 @@ flowchart LR
       bk["mail-backup.timer<br/>週1回"]
       rs["Rspamd（milter）・fail2ban"]
     end
-    app["app VM のコンテナ<br/>（8-6）"]
+    app["app VM のコンテナ<br/>From: noreply@"]
     vault["Vault<br/>メールと中継のパスワード"]
     ed["Email Delivery<br/>承認済みの差出人<br/>DKIM の署名<br/>Return-Path の書き換え"]
   end
@@ -84,21 +84,22 @@ flowchart LR
   mua -- "993（IMAPS）" --> dov
   mua -- "465（SSL/TLS、ログイン）" --> pfsub
   pfsub -. "ログインの確認" .-> dov
+  app -- "25（STARTTLS、ログインなし）<br/>mynetworks で中継を許す" --> pf25
   pfsub -- "587（TLS、IAM ユーザー mail-relay）" --> ed
+  pf25 -- "外宛て（アプリから）も同じく中継" --> ed
   ed -- "25" --> ext
   ext -. "バウンス（bounce.alphajinsei.com 宛て）" .-> ed
   ext -. "MX・SPF・DKIM・DMARC を引く" .-> dns
   le -- "80（HTTP-01）" --> cb
   vault -. "Ansible が platform-secret で読む" .-> mailvm
   bk -- "tar.gz（2世代）" --> objst["Object Storage<br/>mail-backup"]
-  app -. "587" .-> pfsub
-  style app stroke-dasharray: 5 5
 ```
 
-メールの流れ（送信と受信）：
+メールの流れ（メールソフトからの送信、アプリからの送信、受信）：
 
 ```mermaid
 sequenceDiagram
+  participant A as アプリのコンテナ（app VM）
   participant O as Outlook
   participant P as Postfix（mail VM）
   participant D as Dovecot（mail VM）
@@ -106,7 +107,7 @@ sequenceDiagram
   participant G as Gmail
   participant N as DNS（Cloudflare）
 
-  Note over O,N: 送信
+  Note over A,N: 送信（メールソフトから）
   O->>P: 465（TLS）、ログイン alphajinsei@alphajinsei.com
   P->>D: パスワードの確認（private/auth）
   P->>P: 封筒の差出人がログインした人のものか（sender_login）
@@ -116,7 +117,12 @@ sequenceDiagram
   G->>N: SPF（bounce.alphajinsei.com）、DKIM の公開鍵、DMARC を引く
   G->>G: SPF・DKIM・DMARC が pass なら受信箱へ
 
-  Note over O,N: 受信
+  Note over A,N: アプリから送信
+  A->>P: 25（STARTTLS、証明書は mail.alphajinsei.com で確認）、ログインなし。つなぐ先は mail.dmz.platform.oraclevcn.com
+  P->>P: 送信元 10.0.10.x が mynetworks にあるので中継を許す
+  P->>E: 587、ログイン mail-relay（このあとは Outlook からの送信と同じ）
+
+  Note over A,N: 受信
   G->>N: alphajinsei.com の MX を引く（mail.alphajinsei.com）
   G->>P: 25（STARTTLS）
   P->>P: 宛先が vmailbox・virtual にあるか
@@ -189,8 +195,16 @@ Cloudflare に置き、oci-platform の `cloudflare.tf` で Terraform が持つ�
 | ② 直接送る | コンテナ → Email Delivery の SMTP | mail VM が要らない。SES や SendGrid に直接送る、クラウドで一般的な形。SMTP の資格情報（1ユーザーに2つまで）をアプリに配る |
 
 - 学ぶためと、出口を1つにするために①。
-- 足すもの：NSG の mail に「nsg-app から 587番」（今は 587番を全体に開けているので、すでに通る）、差出人の制限（`noreply@alphajinsei.com` など。Email Delivery の承認済みの差出人とも二重になる）。
-- 認証は Step 8-6 で比べて決める。送信元の IP（app VM）で信頼する案は簡単だが、app のどのコンテナでも送れる。アプリごとのパスワード（DB と同じく Terraform が作って Vault に入れる）はアプリごとに止められるが、mail VM の Dovecot への登録を、共通基盤とアプリのどちらが持つかを決める必要がある。
+- **認証は送信元の IP で信頼する**（Step 8-6 で決めた）。Postfix の `mynetworks` に app VM のサブネット（`10.0.10.0/24`）を入れ、アプリのコンテナは mail VM の 25番にログインなしで送る。自分のシステムの中は信じる。
+- 差出人は全アプリ共通の `noreply@alphajinsei.com`（承認済みの差出人は共通基盤が1つ作る）。表示名でアプリを区別する。ほかの `From:` は Email Delivery が断るので、外へ出られる差出人はここで縛られる。
+- アプリは VCN の中の名前（`mail.dmz.platform.oraclevcn.com`。private IP が返る）でつなぎ、STARTTLS の証明書は `mail.alphajinsei.com` を指定して確かめる（ふつうの証明書の名前の検証。証明書がこの名前用なので、つなぐ名前と分けて指定する）。公開の名前 `mail.alphajinsei.com` でつなぐと公開 IP 宛てになって VCN の外を回り、送信元が NAT の IP になって `mynetworks` に当たらない。
+- 比べた案：
+
+| 案 | 判断 |
+| --- | --- |
+| **送信元の IP で信頼（採用）** | 簡単。app のどのコンテナでも送れ、アプリ単位では止められないが、自分のシステムの中なので受け入れる |
+| アプリごとのパスワード（共通基盤の Ansible に一覧） | アプリを足すたびに共通基盤の変更と Ansible の実行が要る。そこまでする理由がない |
+| アプリごとのパスワード（mail VM が Vault から定期的に取り込む） | アプリの Terraform だけで済むが、「Vault をときどき見に行く」仕組みが増え、構成が分かりにくくなる。維持の負担に見合わない |
 
 ## 9. 運用
 
@@ -220,3 +234,5 @@ Cloudflare に置き、oci-platform の `cloudflare.tf` で Terraform が持つ�
 8. **DKIM は Email Delivery に署名してもらう**：鍵の管理と DNS（CNAME）が Terraform だけで済み、Email Delivery の送信の上限の引き上げにも DKIM が要る。自分で署名する（Rspamd）のは学びのために後から足せる（5）。
 9. **構成図を Mermaid にした**：8-4 で送受信がそろったところで、作ったとおりの構成（Rspamd・fail2ban・アプリからの送信は点線）と、送信・受信の流れを図にした。GitHub でそのまま描かれる。
 10. **守り（8-5）の形**：Rspamd は Postfix の milter にし、止まっていても受け取る（`accept`）。拒否は15点以上だけにし、6点以上は Dovecot の Sieve で Junk に入れる（人が見て判断できる）。greylist は届くのが遅れて紛らわしいので切った。fail2ban は VCN の中を除き、失敗が続いた IP の全ポートを1時間閉じる。バックアップは mail VM 自身が置く形（ops から取りに行くより、`/srv/mail` を読む権限を広げずに済む）にし、消す権限は与えない。頻度は週1回・2世代にした（毎日・30日は、無料枠の Object Storage を無駄に食う）。
+11. **アプリからの送信の認証は IP で信頼**：アプリごとのパスワードは、共通基盤の一覧を持つか、Vault を定期的に取り込むかになり、どちらも仕組みに見合わない。自分のシステムの中は信じ、差出人は Email Delivery の承認済みの差出人（`noreply@`）で縛る（8）。
+12. **構成図を 8-6 の断面に**：アプリのコンテナから 25番へ送る流れを実線にし、流れの図にアプリからの送信を足した。アプリは VCN の中の名前でつなぎ、証明書は `mail.alphajinsei.com` で確かめる。

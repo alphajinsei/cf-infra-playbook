@@ -1,6 +1,6 @@
 # 個人サービス公開インフラ 方式検討：全体
 
-最終更新：2026-11-05
+最終更新：2026-11-06
 
 個人サービスを公開する基盤を、どの方式で持つかの検討の入口。全方式に共通の要件と方式の一覧をここに置き、方式ごとの構成と検討の経緯は、それぞれの資料に分ける。
 
@@ -49,6 +49,7 @@ flowchart LR
     lb["Flexible LB"] --> app["app VM<br/>Docker（アプリごとにコンテナ）"]
     app --> db[("MySQL HeatWave")]
     mail["mail VM<br/>Postfix・Dovecot"]
+    app -- "アプリのメール" --> mail
   end
   dns --> pages
   dns --> static
@@ -62,7 +63,7 @@ flowchart LR
   gh -- "push で Pages が拾う" --> pages
 ```
 
-Web の入口はどの方式も Cloudflare の DNS とプロキシで、DNS の向け先を変えるだけで方式をまたいで移せる。メールだけは Cloudflare を通らず、mail VM に直接届く。
+Web の入口はどの方式も Cloudflare の DNS とプロキシで、DNS の向け先を変えるだけで方式をまたいで移せる。メールだけは Cloudflare を通らず、mail VM に直接届く。アプリからのメールも mail VM を通って外へ出る。
 
 | 方式 | 構成 | 使う場面 | 資料 |
 | --- | --- | --- | --- |

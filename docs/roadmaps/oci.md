@@ -695,8 +695,49 @@ Let's Encrypt の証明書を ACME の HTTP-01 で取り（自動更新）、Dov
 
 ### 8-6. アプリから
 
-- [ ] 認証の方式を決める（送信元の IP で信頼するか、アプリごとのパスワードか）
-- [ ] サンプルから `noreply@alphajinsei.com` で送り、Gmail で受け取る
+アプリのコンテナは、mail VM の 25番にログインなしで送る（Postfix の `mynetworks` に app VM のサブネットを入れる。自分のシステムの中は信じる）。差出人は全アプリ共通の `noreply@alphajinsei.com` で、表示名でアプリを区別する。共通基盤は、送り先を出力 `smtp` で渡す。
+
+- [x] 認証の方式を決める：送信元の IP で信頼する（アプリごとのパスワードは、仕組みに見合わない）
+- [x] 共通基盤：承認済みの差出人 `noreply@` と出力 `smtp` を作り、Postfix に app VM のサブネットを信頼させる
+
+  ```bash
+  cd ~/claude-sandbox/oci-platform/terraform
+  ./tf.sh apply
+  terraform output smtp
+  cd ../ansible
+  ansible-playbook site.yml --limit mail
+  ssh oci-mail 'sudo postconf mynetworks'
+  ```
+
+- [x] サンプル：nodemailer を入れ、手元の Mailpit（外へ出さないメールの受け口）で送れることを確かめる
+
+  ```bash
+  cd ~/claude-sandbox/sample-oci-vm-docker
+  npm install nodemailer
+  npm install -D @types/nodemailer
+  docker compose up -d mailpit
+  npx tsx --env-file=local.env src/send-test-mail.ts you@example.com
+  #   http://localhost:8025 に届いている
+  ```
+
+- [x] サンプル：出力 `smtp` を足してデプロイし、app VM のコンテナから Gmail に送る
+
+  ```bash
+  cd infra/terraform && ./tf.sh apply && cd ../..   # 出力 smtp が増えるだけ
+  npm run deploy
+  ssh oci-app 'cd /opt/apps/sample-oci-vm-docker && docker compose exec -T app node dist/send-test-mail.js alphajinsei@gmail.com'
+  #   sent: <...> 250 2.0.0 Ok: queued as ...
+  ssh oci-mail 'sudo grep -E "client=.*10\.0\.10\.|relay=smtp.email" /var/log/mail.log | tail -4'
+  ```
+
+- [x] Gmail で、差出人が「sample-oci-vm-docker <noreply@alphajinsei.com>」で、SPF・DKIM・DMARC が pass になっていることを見る
+
+理解ポイント：
+
+- `mynetworks`（信頼するネットワーク）からは、25番でもよそのドメイン宛てを中継する（`permit_mynetworks`）。外から 25番に来たものは、今までどおり自分のドメイン宛てだけ。
+- 外へ出られる差出人は、Email Delivery の承認済みの差出人（`alphajinsei@` と `noreply@`）で縛られる。Postfix では縛らない。
+- VCN の中の名前（`mail.dmz.platform.oraclevcn.com`）でつなぎ、証明書は `mail.alphajinsei.com` を指定して確かめる。公開の名前でつなぐと公開 IP 宛てになり、送信元が NAT の IP になって信頼されない。
+- 手元の Mailpit で確かめられるのはアプリのコードまで（設定・差出人・ビルド）。経路・中継・TLS・SPF などは本番で確かめる。
 
 ## Step 9：仕上げ
 

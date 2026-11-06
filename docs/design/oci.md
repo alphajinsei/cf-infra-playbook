@@ -1,6 +1,6 @@
 # 個人サービス公開インフラ 方式検討：OCI（方式③）
 
-最終更新：2026-11-05
+最終更新：2026-11-06
 
 OCI の Always Free の範囲で、LB・サーバー・DB のそろった「いわゆる3層」の共通基盤を作り、その上にコンテナでアプリを載せる。メールサーバーのように VM 単体で動かしたいものも、同じ VCN に置く。要件と方式の一覧は [全体](overview.md)。
 
@@ -50,6 +50,7 @@ flowchart TB
   app -- "3306" --> db
   ops -- "3306" --> db
   peer -- "25・465・587・993<br/>（プロキシなし）" --> mailvm
+  app -- "25（アプリのメール、ログインなし）" --> mailvm
   mailvm -- "587（外へのメールの中継）" --> ed
   app -.-> nat
   ops -.-> nat
@@ -347,7 +348,7 @@ Dev PC (WSL)
 | ポート | 台帳から1つ（8000〜8099） |
 | DB | HeatWave にスキーマ1つと専用のユーザー。接続情報は Vault から環境変数に入る |
 | ファイル置き場 | Object Storage のバケット（任意）。VM のインスタンス・プリンシパル（VM 自身に持たせた IAM の権限）で読み書きする。FSS（NFS）は Always Free にないので使わない |
-| メールの送信 | OCI Email Delivery（SMTP 587） |
+| メールの送信 | mail VM の 25番に、ログインなしで送る（共通基盤の出力 `smtp`：`host`（mail VM の VCN の中の名前 `mail.dmz.platform.oraclevcn.com`）、`port`、`tls_name`（STARTTLS の証明書の名前）、`from`）。差出人は `noreply@alphajinsei.com` で、表示名でアプリを区別する。外へは mail VM が Email Delivery に中継する |
 | 監視 | LB のヘルスチェック（アプリは `/health` を返す）と、その異常のメール通知。アプリ側で足すものはない |
 
 ### アプリが守ること
