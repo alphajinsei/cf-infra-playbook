@@ -81,6 +81,7 @@ ssh -i ~/.ssh/oci-platform \
 | セッションの作成が `InvalidParameter`（displayName） | セッションの名前が数字で始まっていた（`10.0.10.10-22`） | 英字で始める（`ssh-10-0-10-10-22`） |
 | Bastion への接続が `Permission denied (publickey)` | Bastion は RSA の鍵しか受け付けない。ed25519 でもセッションは作れてしまう | Bastion 用に RSA の鍵を別に作る。VM 用は ed25519 のまま |
 | スクリプトのエラーが `CalledProcessError` だけで原因が分からない | oci CLI のエラー出力を捨てていた | 失敗したら CLI のメッセージをそのまま出すようにした |
+| 数分何も打たないと `Connection closed` で切れる | 無通信の接続を Bastion が切る（推測。keepalive で直ったので） | `ssh_config` に `ServerAliveInterval 60`。外側の ssh の keepalive は Bastion も通るので、経路全体が保たれる。3時間の TTL は延びない |
 
 ## 別の環境から入るには
 

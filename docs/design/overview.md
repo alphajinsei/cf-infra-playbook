@@ -9,7 +9,7 @@
 | [Cloudflare](cloudflare.md) | 方式⓪①②（標準）。CI/CD の検討もここ |
 | [OCI](oci.md) | 方式③（汎用VM：共通基盤 + コンテナ） |
 
-サービスを作るときに読むのは [サービス開発ガイド](../service-guide.md) と各サンプルの README。この資料は「なぜそうしたか」を残すためのもの。
+サービスを作るときに読むのは [サービス開発ガイド](../service-guide.md)、基盤ごとの資料（[Cloudflare](../platforms/cloudflare.md)、OCI は oci-platform の README）、各サンプルの README。この資料は「なぜそうしたか」を残すためのもの。
 
 ## ねらい
 
@@ -91,5 +91,5 @@ Web の入口はどの方式も Cloudflare の DNS とプロキシで、DNS の�
 ## 次のステップ
 
 - [x] 標準方式（Workers + D1）のサンプルを作り、サービス開発ガイドにまとめる（[学習ロードマップ：Cloudflare](../roadmaps/cloudflare.md)）
-- [ ] 方式③の共通基盤とサンプルを作る（[学習ロードマップ：OCI](../roadmaps/oci.md)）
+- [x] 方式③の共通基盤とサンプルを作る（[学習ロードマップ：OCI](../roadmaps/oci.md)）
 - [ ] Cloudflare 以外の無料枠の数値を、各社の公式ページで確認する

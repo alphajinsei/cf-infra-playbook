@@ -347,7 +347,7 @@ Dev PC (WSL)
 | ドメイン | `<名前>.alphajinsei.com`（HTTPS は LB と Cloudflare が持つ。アプリは HTTP で待つ） |
 | ポート | 台帳から1つ（8000〜8099） |
 | DB | HeatWave にスキーマ1つと専用のユーザー。接続情報は Vault から環境変数に入る |
-| ファイル置き場 | Object Storage のバケット（任意）。VM のインスタンス・プリンシパル（VM 自身に持たせた IAM の権限）で読み書きする。FSS（NFS）は Always Free にないので使わない |
+| ファイル置き場 | Object Storage のバケット（任意。まだ作っていない。要るアプリが出たら共通基盤に足す）。VM のインスタンス・プリンシパル（VM 自身に持たせた IAM の権限）で読み書きする。FSS（NFS）は Always Free にないので使わない |
 | メールの送信 | mail VM の 25番に、ログインなしで送る（共通基盤の出力 `smtp`：`host`（mail VM の VCN の中の名前 `mail.dmz.platform.oraclevcn.com`）、`port`、`tls_name`（STARTTLS の証明書の名前）、`from`）。差出人は `noreply@alphajinsei.com` で、表示名でアプリを区別する。外へは mail VM が Email Delivery に中継する |
 | 監視 | LB のヘルスチェック（アプリは `/health` を返す）と、その異常のメール通知。アプリ側で足すものはない |
 

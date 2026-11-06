@@ -148,6 +148,7 @@
 - `terraform output` は、apply のときに state に保存された output の値を読んで表示するだけ（API には問い合わせない）。`-raw` は文字列を引用符なしで出す（シェルの変数に入れるとき）。アプリ側の Terraform は `terraform_remote_state` で同じ値を読む。
 - Vault は金庫、Key は金庫に据え付けた暗号化の機械（外に出せず、中身も読めない。暗号化と復号を頼めるだけ）、Secret は金庫に預けた書類（Key で暗号化して保管され、権限があれば取り出せる）。Secret を読むと Vault が裏で Key で復号する。AWS で言うと Key が KMS、Secret が Secrets Manager。VM には `read secret-family`（読むだけ）を与え、Key を直接使う権限は渡していない。
 - Bastion のセッションの鍵は RSA だけ。ed25519 を渡してもセッションは作れてしまうが、接続で `Permission denied (publickey)` になる。セッションの名前（display name）も英字で始める（数字で始まると InvalidParameter）。
+- 無操作で数分たつと Bastion 経由の ssh が切れる。ssh_config に `ServerAliveInterval 60` を書くと、手元の ssh が60秒ごとに keepalive を送り、Bastion にも通信が流れるので切れなくなる。サーバ側の変更は要らない。`ssh_config` は Terraform の `local_file` がテンプレート（`ssh_config.tftpl`）から書き出す手元のファイル。apply しても OCI には何もせず、そのファイルを書き直すだけ。直接編集すると次の apply で消えるので、テンプレートを直す。
 - OCI が塞いでいるのは外へ出す 25 番だけ。自前のメールサーバーは、受信は 25 番で直接受け、送信は Email Delivery に 587 番で中継すると、申請も IP の評判の問題も避けられる。
 - Cloudflare の DNS でプロキシ（オレンジの雲）を有効にすると、名前解決で返るのは Cloudflare のエッジの IP になる。利用者がつなぐのは Cloudflare で、Cloudflare が改めてオリジン（OCI の LB）につなぎ直す。そのため LB に来るのは Cloudflare の IP だけで、NSG でそこに絞れば、LB の IP を直接たたく迂回を防げる。Origin 証明書はブラウザに信頼されず Cloudflare だけが信頼するので、プロキシを外すと HTTPS も通らなくなる。
 - Cloudflare とオリジンの間の暗号化は、SSL/TLS の暗号化モードで決まる。Flexible は Cloudflare → オリジンが HTTP、Full は HTTPS だが証明書を検証しない、Full (strict) は HTTPS で証明書も検証する。③は Full (strict) で、LB が受けるのは 443番だけ。モードはゾーン全体の設定だが、Workers・Pages はエッジで動くので、①②では関係がなかった。

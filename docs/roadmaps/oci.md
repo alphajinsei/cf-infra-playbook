@@ -1,13 +1,13 @@
 # 学習ロードマップ：OCI 共通基盤（方式③）
 
-最終更新：2026-11-05
+最終更新：2026-11-06
 
 ## ゴール
 
 [方式検討：OCI](../design/oci.md) の構成を、Terraform と Ansible で作って動かす。その上にサンプルアプリを載せ、③のサービスを作るときに読む資料（共通基盤とサンプルの README）までそろえる。
 
 - 共通基盤：`oci-platform`
-- サンプル：`sample-oci-vm-docker`。②と同じメモ帳を Node + Hono + Drizzle（MySQL）で作り、添付ファイルを Object Storage に置く
+- サンプル：`sample-oci-vm-docker`。②と同じメモ帳を Node + Hono + Drizzle（MySQL）で作る（添付ファイルの Object Storage は見送った。要るアプリが出たら共通基盤に足す）
 - 公開先：`sample-oci-vm-docker.alphajinsei.com`
 
 ## 進め方
@@ -741,6 +741,7 @@ Let's Encrypt の証明書を ACME の HTTP-01 で取り（自動更新）、Dov
 
 ## Step 9：仕上げ
 
-- [ ] 共通基盤の README に、仕様（アプリが受け取るもの・守ること）とポートの台帳を書く
-- [ ] サンプルの README を、[サービス開発ガイド](../service-guide.md) の6つの見出しで書く
-- [ ] サービス開発ガイドの「方式の一覧」の③の行を埋める
+- [x] 共通基盤の README に、仕様（アプリが受け取るもの・守ること）とポートの台帳を書く
+- [x] サンプルの README を、[サービス開発ガイド](../service-guide.md) の6つの見出しで書く（Step 6〜8 で書いてきたものを見直した）
+- [x] サービス開発ガイドの「方式の一覧」の③の行を埋める
+- [x] サービス開発ガイドを3段に分ける：全方式共通（`service-guide.md`）、基盤ごと（Cloudflare は `docs/platforms/cloudflare.md`、OCI は `oci-platform` の README）、方式ごと（サンプルの README）。ガイドが Cloudflare の話に寄っていたため
