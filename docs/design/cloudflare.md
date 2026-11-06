@@ -16,6 +16,10 @@
 
 制約：Workers の実行環境は V8 isolate（コンテナやVMではない）。そのため動くのは JS/TS が中心で、Python は制約付き、Rust/Go などは WebAssembly 経由となる。DB は SQLite（D1）。
 
+![方式②の構成](diagrams/cf-app.drawio.svg)
+
+図は draw.io で編集できる（VSCode の拡張 Draw.io Integration で開く）。同じ内容の Mermaid 版を下に残す（Mermaid 版にある Cron Triggers は、使えるが今は使っていないので、図からは外した）。
+
 ```mermaid
 flowchart LR
   user["利用者<br/>ブラウザ"] --> dns
@@ -109,6 +113,10 @@ my-service/
 - ブランチごとのプレビューは使わない。確かめるのは `wrangler dev` で行う。プレビューを使うと本番と同じ D1 につながり、本番のデータに触れてしまう。
 
 ### 静的サイト（方式①）と既存の Pages
+
+![方式①と既存の Pages](diagrams/cf-static.drawio.svg)
+
+図は draw.io で編集できる（VSCode の拡張 Draw.io Integration で開く）。同じ内容の Mermaid 版を下に残す。
 
 ```mermaid
 flowchart LR

@@ -13,6 +13,10 @@ OCI の Always Free の範囲で、LB・サーバー・DB のそろった「い�
 
 ## 2. 全体の構成
 
+![OCI 共通基盤の全体構成](diagrams/oci-overview.drawio.svg)
+
+図は draw.io で編集できる（VSCode の拡張 Draw.io Integration で開く）。同じ内容の Mermaid 版を下に残す。
+
 ```mermaid
 flowchart TB
   users["利用者"] -- "https://アプリ名.alphajinsei.com" --> cf["Cloudflare<br/>DNS・プロキシ・WAF"]

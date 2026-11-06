@@ -33,6 +33,10 @@
 
 新しいサービスはまず標準方式（①②）で作り、そこで実現できないときだけ他の方式を使う。既存の Pages のサイトは⓪として、そのまま残す。
 
+![方式の一覧](diagrams/overview.drawio.svg)
+
+図は draw.io で編集できる（VSCode の拡張 Draw.io Integration で開く）。同じ内容の Mermaid 版を下に残す。
+
 ```mermaid
 flowchart LR
   user["利用者<br/>ブラウザ"] --> dns

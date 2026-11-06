@@ -181,6 +181,7 @@
 - OCI の Ubuntu のイメージは `/etc/default/netfilter-persistent` で `IPTABLES_RESTORE_NOFLUSH=yes` にしている。`netfilter-persistent reload` は今のルールを消さずに後ろに足すので、古い `REJECT` が先に残り、足した ACCEPT が効かない（`No route to host` になる）。ファイルを直したら `iptables-restore < /etc/iptables/rules.v4`（フラッシュしてから読む）か再起動。`iptables -S` で実際に効いている順番を見る。
 - メールの基礎（登場人物、封筒と便箋、ポート、SPF・DKIM・DMARC の全体像とアライメント）→ [番外編：メールの仕組み](extra-mail-basics.md)
 - メールサーバーを組みながら分かったこと（Postfix の役割と設定、届いたメールのヘッダー、証明書の役割、ACME と自動更新、Dovecot との分担）→ [番外編：メールサーバーを組む](extra-mail-build.md)
+- メールの流れを図にして分かったこと（Postfix はルーターに近い、ポートと暗号化は別の軸、認証の3種類、経路ごとのプロトコル・ポート・認証）→ [番外編：メールの流れを図にして分かったこと](extra-mail-diagram.md)
 - サブドメインとパスの振り分けの比較：パスにすると、アプリ全体に base path の設定が要り、Cookie などのオリジンも共有になる。サブドメインなら Origin 証明書 `*.alphajinsei.com` 1枚で足り、方式をまたいで DNS の向け先を変えるだけで移せる。→ [方式検討：OCI](../design/oci.md)
 
 ## 認証情報の一覧

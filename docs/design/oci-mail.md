@@ -52,7 +52,11 @@
 
 ## 4. 構成
 
-Step 8-6 までに作ったもの。実線はメールの流れ、点線は確認や管理の流れ。
+Step 8-6 までに作ったもの。
+
+![メール基盤の構成](diagrams/oci-mail.drawio.svg)
+
+図は draw.io で編集できる（VSCode の拡張 Draw.io Integration で開く）。上の段が送信、下の段が受信で、線のラベルは「プロトコル :ポート（暗号化・クライアントの認証）」。Postfix の中の仕組みと、経路ごとのプロトコル・ポート・認証の整理は [番外編：メールの流れを図にして分かったこと](../notes/extra-mail-diagram.md)。同じ内容の Mermaid 版を下に残す（実線はメールの流れ、点線は確認や管理の流れ）。
 
 ```mermaid
 flowchart LR

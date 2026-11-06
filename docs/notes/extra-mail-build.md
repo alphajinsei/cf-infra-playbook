@@ -19,24 +19,7 @@ Internet --25--> smtpd --> cleanup --> queue (qmgr) --+--> virtual : write Maild
                                                       +--> smtp    : other domains (8-4: via Email Delivery)
 ```
 
-### Postfix の主なデーモン（構成図を描くときに整理）
-
-master.cf の1行が1つのデーモン（`master` が起動して見張る）。メールは「受け取る → キュー → 配る」の3段を通る。
-
-| 段 | デーモン | やること | この基盤での使われ方 |
-| --- | --- | --- | --- |
-| 受け取る | smtpd | SMTP のサーバー。つないできた相手と話し、受け取るか断るかを決める。ログインの確認（SASL）と milter もここ | 口は3つで、master.cf の `smtp`（:25）・`submission`（:587）・`submissions`（:465）。プログラムは同じ smtpd で、`-o` で規則を変えている。ログインの確認は Dovecot に、迷惑メールの判定は Rspamd に聞く |
-| | cleanup | ヘッダーを整え、宛先を書き換え（`virtual_alias_maps`）、キューに書く | smtpd から渡される |
-| キュー | qmgr | キューを見て、宛先ごとに配送のデーモンを呼ぶ。失敗したら後で再送 | 宛先から配り方を決めるのは trivial-rewrite（自分のドメイン → `virtual_transport`、それ以外 → `relayhost`） |
-| 配る | lmtp | LMTP のクライアント | 自分宛てを Dovecot に渡す（`virtual_transport = lmtp:unix:private/dovecot-lmtp`） |
-| | smtp | SMTP のクライアント | 外宛てを Email Delivery の :587 に中継する（STARTTLS、`mail-relay` でログイン） |
-| 補助 | bounce・anvil・tlsmgr・scache など | バウンスの通知、接続数の制限、TLS のセッションのキャッシュ | 意識しなくてよい |
-
-- 「受け取る口」は smtpd だけで、3つのポートはどれも smtpd。Postfix が外へ :25 で送ることはない（外宛ては全部 smtp が :587 で中継に渡す）。
-- Dovecot との線は2本あり、出どころが違う。ログインの確認は smtpd から、メールの受け渡し（LMTP）は lmtp から。
-- **ルーティングと同じ考え方**：受け取ったメールは、送信か受信かを区別せずにキューに入り、qmgr が宛先のドメインで行き先を決める。自分のドメインなら `virtual_transport`（lmtp で Dovecot へ）、それ以外は `relayhost`（Email Delivery の :587）。宛先のドメインで引くのがルート表、`relayhost` がデフォルトゲートウェイにあたる（`relayhost` を置かなければ、宛先の MX を DNS で引いて :25 に直接送る。ゲートウェイなしで直接つなぐのと同じ）。
-- ただし、受け取る時点では宛先を見ている。外宛て（中継）を受けるのは、SMTP AUTH が通った相手か `mynetworks` の相手だけ（`smtpd_relay_restrictions`）。だれでも中継できるとオープンリレーになるため。ルーターでいえば、転送する前のフィルタ（ACL）にあたる。
-- **「ログイン」の正体は SMTP AUTH**（RFC 4954）。SMTP の中で SASL の仕組みを使い、ユーザー名とパスワードを送る（方式は PLAIN・LOGIN。どちらもパスワードを平文で送るので、TLS の中でだけ許す）。Outlook からの分は、smtpd が Dovecot に照合を頼む（passwd-file の SHA512-CRYPT のハッシュと比べる）。Email Delivery への中継では、Postfix がクライアントとして IAM ユーザー `mail-relay` の SMTP の資格情報を送る。証明書の確認（相手のサーバーが本物か）とは別の話。
+Postfix を構成するデーモンと、送信も受信も宛先で振り分けるルーターのような考え方は、構成図を描くときに整理した → [番外編：メールの流れを図にして分かったこと](extra-mail-diagram.md)
 
 ### アドレスクラス
 
