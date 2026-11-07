@@ -178,7 +178,7 @@ oci mysql db-system delete --db-system-id <HeatWave の ID> --wait-for-state DEL
 ```
 
 - [x] もう一度一覧を出して、残っているのがバックアップ、コンパートメント、`tfstate` バケットなどだけであることを確かめる（Oracle が作ったもの（`Tenant Admin Policy`、`PSM-*`、`ManagedCompartmentForPaaS`、`Oracle-Tags`、`OsmhProfile`）と予算は残す。古い VCN `vcn-20231009-1034` と DRG が1つずつ残っているが、新しい VCN と合わせて2つで、上限内）
-- [ ] 翌日、Cost Analysis でバックアップの分の金額が増えていないかを確かめる（毎月数円のカスタムイメージ代は既にある）
+- [x] 翌日、Cost Analysis でバックアップの分の金額が増えていないかを確かめる（毎月数円のカスタムイメージ代は既にある）
 
 ## Step 2：ネットワーク
 
@@ -193,7 +193,7 @@ terraform plan
 terraform apply
 ```
 
-- [ ] GitHub にリポジトリを作って push する（`.terraform.lock.hcl` も入れる。provider の版を固定するファイル）
+- [x] GitHub にリポジトリを作って push する（`.terraform.lock.hcl` も入れる。provider の版を固定するファイル）
 
 ```bash
 cd ~/claude-sandbox/oci-platform
@@ -201,7 +201,7 @@ git add -A && git commit -m "Add network (VCN, subnets, gateways, NSGs)"
 gh repo create oci-platform --public --source . --push
 ```
 
-- [ ] 翌日、Cost Analysis で NAT Gateway の分の金額が増えていないかを確かめる
+- [x] 翌日、Cost Analysis で NAT Gateway の分の金額が増えていないかを確かめる
 
 理解ポイント：
 
@@ -661,7 +661,7 @@ Let's Encrypt の証明書を ACME の HTTP-01 で取り（自動更新）、Dov
   ssh oci-mail 'sudo fail2ban-regex /var/log/mail.log "postfix[mode=auth]" | grep -A2 "^Failregex"'
   ```
 
-- [ ] 1日ほどたってから、外からの失敗で締め出されている IP を見る（後日）
+- [ ] 1日ほどたってから、外からの失敗で締め出されている IP を見る（いつかやる。いったん置いておく）
 
   ```bash
   ssh oci-mail 'sudo fail2ban-client status postfix-sasl; sudo fail2ban-client status dovecot'
@@ -685,8 +685,8 @@ Let's Encrypt の証明書を ACME の HTTP-01 で取り（自動更新）、Dov
   #   消せないことも確かめる：oci os object delete --auth instance_principal --bucket-name mail-backup --name <名前> → 404 NotAuthorizedOrNotFound
   ```
 
-- [ ] DMARC のレポート（後日。最初の1通は 2026-11-07 に読んだ。全部 pass）：1週間ほど、`dmarc@` に届くレポート（Google などから、zip か gz の XML）を開き、自分のメールが全部 `dkim` と `spf` で pass、`disposition` が `none` になっていることを見る
-- [ ] 全部 pass なら、`cloudflare.tf` の DMARC を `p=quarantine` に変えて apply する（変更は Claude に頼む）（後日）
+- [ ] DMARC のレポート（最初の1通は 2026-11-07 に読んだ。全部 pass）：1週間ほど、`dmarc@` に届くレポート（Google などから、zip か gz の XML）を開き、自分のメールが全部 `dkim` と `spf` で pass、`disposition` が `none` になっていることを見る（いつかやる。いったん置いておく）
+- [ ] 全部 pass なら、`cloudflare.tf` の DMARC を `p=quarantine` に変えて apply する（変更は Claude に頼む）（いつかやる。いったん置いておく）
 
 理解ポイント：
 

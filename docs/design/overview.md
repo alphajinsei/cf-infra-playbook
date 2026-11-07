@@ -96,4 +96,4 @@ Web の入口はどの方式も Cloudflare の DNS とプロキシで、DNS の�
 
 - [x] 標準方式（Workers + D1）のサンプルを作り、サービス開発ガイドにまとめる（[学習ロードマップ：Cloudflare](../roadmaps/cloudflare.md)）
 - [x] 方式③の共通基盤とサンプルを作る（[学習ロードマップ：OCI](../roadmaps/oci.md)）
-- [ ] Cloudflare 以外の無料枠の数値を、各社の公式ページで確認する
+- [ ] Cloudflare 以外の無料枠の数値を、各社の公式ページで確認する（いつかやる。いったん置いておく）

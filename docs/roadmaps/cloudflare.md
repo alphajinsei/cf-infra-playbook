@@ -51,7 +51,7 @@ sudo apt install -y git curl unzip rsync build-essential
 - [x] git の初期設定（2026-11-02 に Claude が設定済み：`user.name`、`user.email`、`core.autocrlf input`、Windows 側と同じグローバル除外設定 `~/.config/git/ignore`）
 - [x] 残り：`git config --global init.defaultBranch main`
 
-- [ ] VSCode（Windows 側）に拡張機能「WSL」（`ms-vscode-remote.remote-wsl`）を入れる
+- [x] VSCode（Windows 側）に拡張機能「WSL」（`ms-vscode-remote.remote-wsl`）を入れる
 
 ### 0-2. CLI の導入
 
@@ -355,10 +355,10 @@ curl -sI https://sample-cf-workers-d1.alphajinsei.com/api/memos | head -1  # 200
 
 やること：
 
-- [ ] `wrangler.jsonc` で `"observability": { "enabled": true }` を設定し、ダッシュボードでログを検索する
-- [ ] Cron Triggers を設定し、1日1回、古いメモを消す（または件数をログに出す）`scheduled()` を書く
-- [ ] UptimeRobot で `https://sample-cf-workers-d1.alphajinsei.com/api/health` を監視し、通知を受け取れるようにする
-- [ ] `npx wrangler d1 export DB --remote --output backup.sql` でバックアップを取ってみる。D1 の Time Travel（過去の時点への復元）の仕組みも調べる
+- [ ] `wrangler.jsonc` で `"observability": { "enabled": true }` を設定し、ダッシュボードでログを検索する（いつかやる。いったん置いておく）
+- [ ] Cron Triggers を設定し、1日1回、古いメモを消す（または件数をログに出す）`scheduled()` を書く（いつかやる。いったん置いておく）
+- [ ] UptimeRobot で `https://sample-cf-workers-d1.alphajinsei.com/api/health` を監視し、通知を受け取れるようにする（いつかやる。いったん置いておく）
+- [ ] `npx wrangler d1 export DB --remote --output backup.sql` でバックアップを取ってみる。D1 の Time Travel（過去の時点への復元）の仕組みも調べる（いつかやる。いったん置いておく）
 
 理解ポイント：
 
@@ -392,6 +392,6 @@ gh repo edit alphajinsei/sample-cf-workers-static --visibility public --accept-v
 gh repo create <name> --template alphajinsei/sample-cf-workers-d1 --public --clone
 ```
 - [x] サービス開発側に渡すインフラ設計資料をまとめる：全方式共通は [サービス開発ガイド](../service-guide.md)、方式ごとは各サンプルの `README.md`（見出しは6つにそろえる）
-- [ ] 以降のサービスのデプロイは Claude に任せる（実際のサービスを作るときに）
+- [ ] 以降のサービスのデプロイは Claude に任せる（実際のサービスを作るときに。それまで置いておく）
 
 次：方式③（OCI）。[学習ロードマップ：OCI](oci.md)
