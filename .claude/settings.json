@@ -4,7 +4,8 @@
       "/home/alphajinsei/claude-sandbox/sample-cf-workers-d1",
       "/home/alphajinsei/claude-sandbox/sample-cf-workers-static",
       "/home/alphajinsei/claude-sandbox/oci-platform",
-      "/home/alphajinsei/claude-sandbox/sample-oci-vm-docker"
+      "/home/alphajinsei/claude-sandbox/sample-oci-vm-docker",
+      "/home/alphajinsei/claude-sandbox/auth"
     ],
     "allow": [
       "Bash(gh repo create *)"

@@ -374,6 +374,7 @@ Dev PC (WSL)
 - Docker ホストのアプリとして載せる（例：`auth.alphajinsei.com`）。Keycloak は MySQL に対応している。Authentik と Zitadel は PostgreSQL が必須なので、このままでは載らない。
 - 自作する場合も同じで、LB の振り分け1つと HeatWave のスキーマ1つを足すだけ。
 - 自分で動かさない選択肢として、OCI IAM Identity Domains（無料のタイプがある）と Cloudflare Access がある。
+- 2026-11-07：自作に決め、独立したリポジトリ [auth](https://github.com/alphajinsei/auth)（`auth.alphajinsei.com`、ポート 8002）で進める。設計・ロードマップ・勉強メモもそちらに置く。
 
 ### まだ載せていない処理の方式
 
