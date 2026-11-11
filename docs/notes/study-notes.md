@@ -1,40 +1,339 @@
 # 勉強メモ
 
-最終更新：2026-11-03
+最終更新：2026-11-12
 
-[学習ロードマップ](../roadmaps/) を進める中で分かったことを、短く積み上げていくメモ。長くなった話は番外編（`extra-*.md`）に分けて、ここからリンクする。
+[学習ロードマップ](../roadmaps/) を進める中で出てきた疑問と、その答えを積み上げていくメモ。1つの問いに1つの見出しを立てる。答えは、会話の中で説明した内容を、圧縮せずにそのまま残す（あとから読み返して「当時何を理解したのか」が分かるように）。とくに長い話は番外編（`extra-*.md`）に分けて、答えからリンクする。認証基盤の話は、auth リポジトリの [勉強メモ](https://github.com/alphajinsei/auth/blob/main/docs/notes/study-notes.md)。
 
 ## 開発環境（WSL）
 
-- WSL は既定で、Windows の PATH を Linux の PATH の後ろに足す。WSL に入れていないコマンドも Windows 側のものが動いてしまう。apt の nodejs には npm が含まれず、npm だけ Windows 側が使われていた。対策は、WSL の中に nvm で Node.js を入れること。→ [番外編：Node.js まわりの用語](extra-nodejs-basics.md)
-- nvm と fnm は同じ役割。情報が多い（AI に聞いても当たりやすい）nvm を選んだ。
-- apt で外部のソフトを入れるときは、「配布元の署名鍵（公開鍵）を置く → 配布元を `sources.list.d` に登録し、`signed-by=` で鍵と結び付ける → apt で入れる」の流れになる。向きは SSH の known_hosts に近い。→ [番外編：apt の署名鍵と GPG](extra-apt-signing.md)
+### Q. node は WSL 上、npm は Windows 側、という状態になっている。これは自分だけではない、よく知られた事象に見える。ベストプラクティス的な解消法はないのか
+
+WSL ではよく知られた事象。
+
+**なぜ起きるか**
+
+- WSL は、既定で Windows の PATH を Linux の PATH の**後ろ**に足す。そのため Linux 側から `code .` や `explorer.exe` が使える。
+- `node` は Linux 側の `/usr/bin/node`（apt で入っていた v18）が先に見つかるので、そちらが使われる。
+- Ubuntu では npm が `nodejs` とは別のパッケージになっている。Linux 側に npm がないので、PATH の後ろにある Windows 側の npm まで探しにいってしまう。
+
+**ベストプラクティス**
+
+Microsoft の公式ドキュメント（「Set up Node.js on WSL 2」）が勧めているのは、**WSL の中にバージョン管理ツール（nvm）で Node.js を入れる**方法。こうすると Linux 側の node と npm が PATH の前に来るので、Windows 側の npm は使われなくなる。
+
+もっと強い方法として、`/etc/wsl.conf` に `appendWindowsPath = false` と書いて、Windows の PATH を丸ごと切り離すこともできる。ただし `code .` なども使えなくなり、必要なものを個別に PATH へ足し直すことになるので、最初はやらなくてよい。
+
+**理解の確認**：「wsl 上にインストールしていなくても、なんか使えるな……という状況が起きうる。そうならないよう、wsl 上でも明示的に nodejs をインストールしよう」という理解で合っている。補足すると、困るのは「使えてしまう」ことそのものより、**Linux の道具を使っているつもりで、実は Windows の道具が動いている**こと。Windows 側の npm で WSL 側のファイルを扱うと、動作がとても遅くなったり、Windows 用にビルドされた部品が混ざって Linux で動かなくなったりする。
+
+→ [番外編：Node.js まわりの用語](extra-nodejs-basics.md)
+
+### Q. `sudo apt remove nodejs` は何だったのか。もともと古い Node.js が入っていたのを消したのか。apt より自分で取ってくる方が自然、という意味か
+
+WSL にはもともと apt で入った Node.js v18 があり、それを消した（Ubuntu の初期状態には入っていないので、以前に何かのついでに入ったものと思われる）。
+
+「自分で取ってくる方が自然」という意味ではない。違いは**誰が用意した Node.js を使うか**。
+
+| | apt の nodejs | nvm |
+| --- | --- | --- |
+| 配っている人 | Ubuntu。OS のバージョンごとに固定されている | Node.js の公式（nodejs.org）がビルドしたもの |
+| バージョン | 古い（今回は 18、サポート終了済み） | 好きなものを選べる |
+| npm | 別パッケージ（今回は入っておらず、Windows 側が使われていた） | 一緒に入る |
+| 置き場所 | `/usr/bin`（全ユーザー共通、sudo が要る） | `~/.nvm`（自分専用、sudo 不要） |
+
+開発用の Node.js は nvm で入れるのが一般的。古い v18 が残っていると「どちらが動いているのか」が紛らわしくなるので消した。
+
+### Q. gh と Terraform のインストールでは、何をやっているのか。署名鍵とは何か（相手の公開鍵、あるいはサーバー証明書のようなものか）。gpg とは何か。手元に gpg 鍵を登録するとは、具体的にどうやるのか
+
+流れは「配布元の署名鍵を置く → 配布元を apt に登録する → apt で入れる」。Ubuntu 標準の apt には入っていない（か古い）ので、配布元を足している。
+
+**署名鍵とは**
+
+**配布元の公開鍵**。サーバー証明書と目的は似ている（相手が本物かを確かめる）が、確かめる対象が違う。
+
+- サーバー証明書（TLS）：「いま通信している**サーバー**が本物か」を確かめる。認証局（CA）が保証する。
+- 署名鍵（GPG）：「受け取った**中身（パッケージ）**を本物の配布元が作ったか」を確かめる。保証する第三者はいない。この鍵を信じると自分で決めて置く。
+
+中身を確かめる仕組みなので、途中のミラーサーバーやキャッシュがすり替えられても検知できる。
+
+**gpg と、検証の仕組み**
+
+GPG（GNU Privacy Guard）は、OpenPGP という署名・暗号の規格を実装したツール。鍵の形式の名前でもある。apt の検証は次のように進む。
+
+1. 配布元は、パッケージ一覧の目次（`Release` ファイル）を**秘密鍵で署名**して公開している。目次には、各パッケージ一覧のハッシュ値が載っている。
+2. `apt update` で目次を取ってくると、手元の**公開鍵（署名鍵）**で署名を検証する。
+3. 目次のハッシュ値でパッケージ一覧を確かめ、一覧に載っているハッシュ値で各 `.deb` ファイルを確かめる。
+
+署名を1つ確かめれば、ハッシュ値の連鎖で全パッケージが本物だと分かる。yum で「GPG 鍵がなくて失敗する」のは、2 の時点で検証に使う公開鍵が手元にないから（yum は rpm ファイル1つ1つにも署名がある）。配布元が鍵を更新したときにもよく起きる。
+
+**手元への登録の仕方**
+
+置き場所は2か所に分かれる。`sources.list.d` に置くのは鍵ではなく、配布元の登録。
+
+| ファイル | 中身 |
+| --- | --- |
+| `/etc/apt/keyrings/githubcli-archive-keyring.gpg` | 鍵そのもの |
+| `/etc/apt/sources.list.d/github-cli.list` | 配布元の URL と「この配布元はあの鍵で検証せよ」という指定 |
+
+```
+deb [arch=amd64 signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main
+```
+
+`signed-by=` で、**この鍵はこの配布元にしか使わない**と結び付けている。昔は `apt-key add` で鍵を全体に登録する方式だったが、ある配布元の鍵で別の配布元のパッケージを偽装できてしまうので廃止された。Terraform の手順の `gpg --dearmor` は、テキスト形式の鍵（`-----BEGIN PGP PUBLIC KEY BLOCK-----`）を、apt が読むバイナリ形式に変換している。
+
+→ [番外編：apt の署名鍵と GPG](extra-apt-signing.md)
+
+### Q. apt の署名鍵は、SSH の authorized_keys や known_hosts のような概念か
+
+いい対応づけ。向きでいうと **known_hosts のほうが近い**。
+
+- known_hosts：クライアント（受け取る側）が、サーバー（相手）の公開鍵を置く
+- authorized_keys：サーバーが、ログインしてくるユーザーの公開鍵を置く（向きが逆）
+- apt の署名鍵：自分（受け取る側）が、配布元の公開鍵を置く → known_hosts と同じ向き
+
+違うのは、SSH が「接続の相手」を確かめるのに対し、apt は「ファイルの中身」を確かめる点。最初の1回は信じるしかない、というところも同じ（SSH の初回接続で出る「この鍵を信じますか？」と同じ）。
 
 ## git
 
-- `.gitattributes` の `* text=auto eol=lf` は、テキストファイルの改行を LF にそろえるリポジトリの設定。`core.autocrlf` は自分のパソコンの設定なので、リポジトリに書いておくほうが誰が clone しても確実に効く。CRLF が混ざると、シェルスクリプトが `bad interpreter: /bin/bash^M` で動かなくなる。
-- `gh repo create <名前> --private --source . --push` で、手元の既存リポジトリから GitHub のリポジトリを作り、`origin` の登録と push まで一度にできる（ブラウザで作る必要がない）。
-- コミットには作者のメールアドレスが必ず記録され、公開リポジトリでは誰でも `git log` で見られる。GitHub が用意する noreply アドレス（`<ID>+<ユーザー名>@users.noreply.github.com`）を使うと、本物のアドレスを隠したまま、アカウントのコミットとして扱われる。メールは届かない。infra（GitHub では `cf-infra-playbook`、公開）はリポジトリ単位で `git config user.email` に設定し、公開前のコミットも `git filter-branch --env-filter` で書き換えた。プッシュ前なら、履歴の書き換えは他に影響しない。
-- GitHub の Template repository（リポジトリの Settings で有効にする）は、`gh repo create <新しい名前> --template <元のリポジトリ> --clone` で、履歴なしの丸ごとコピーを作れる機能。サンプルが薄いうちは、テンプレートを別に作ると中身がほぼ重複し、2つを同じ状態に保つ手間が増えるので、サンプルそのものをテンプレートにした。
-- git リポジトリの中で別のプロジェクトを `git init` すると入れ子になる。親で `git add .` しても、子は中身のない参照としてしか記録されない。サンプルは infra の隣に `sample-<基盤>-<構成>/` として置くことにした。
+### Q. `.gitattributes` とは何か
+
+**リポジトリの中のファイルを git がどう扱うかの設定**で、リポジトリと一緒にコミットされる。
+
+```
+* text=auto eol=lf
+```
+
+- `*`：すべてのファイルに対して
+- `text=auto`：テキストファイルかどうかは git が自動で判定する（画像などのバイナリには何もしない）
+- `eol=lf`：テキストファイルの改行コードは LF にそろえる
+
+**なぜ要るか**：Windows の改行は CRLF、Linux の改行は LF。改行コードが混ざると、たとえばシェルスクリプトが `bad interpreter: /bin/bash^M` というエラーで動かなくなる。Windows で編集したファイルが紛れ込む可能性があるので、そろえておく。
+
+**git config の `core.autocrlf` との違い**：`core.autocrlf` は**自分のパソコンの設定**。`.gitattributes` は**リポジトリの設定**なので、誰がどのパソコン（Windows 側でも）で clone しても同じルールが効く。リポジトリに書いておくほうが確実。`git ls-files --eol` で見ると、全ファイルが LF（`i/lf w/lf`）になっていた。
+
+### Q. サンプルアプリは方式ごとに作るので、フォルダが増えていく。どう置くのがよいか。`npm create cloudflare` がサンプルの中でも `git init` するのはなぜか
+
+**置き場所と名前**：`~/claude-sandbox/` の直下に、`sample-<基盤>-<構成>` という名前で並べる。
+
+```
+~/claude-sandbox/
+├── infra/                    方針と学習の記録
+├── sample-cf-workers-d1/     方式②
+└── sample-oci-vm-docker/     方式③
+```
+
+- フォルダ名と GitHub のリポジトリ名を同じにできる。GitHub にはフォルダの階層がないので、`sample-` で始めておくと一覧で並んで見つけやすい。
+- 基盤の名前（cf / oci など）を先頭に入れる。「worker-d1」だけだと、学習の枠が増えたときにどこの話か分かりにくい。
+- 小文字とハイフンだけにする。フォルダ名がそのまま Worker の名前（`wrangler.jsonc` の `name`）になり、Worker の名前は小文字・数字・ハイフンしか使えない（`worker-D1` の大文字は通らない）。
+
+**infra の中に置かなかった理由**：git リポジトリの中で別のプロジェクトを `git init` すると、**入れ子**になる。infra 側で `git add .` すると警告が出て、子のリポジトリは中身のない参照としてしか記録されない。サンプルは単独のリポジトリとして GitHub に push する予定だったので、infra の隣に置くことにした。infra は「方針と学習の記録」、サンプルは「サービスそのもの」とはっきり分かれ、設計方針の「1サービス＝1ディレクトリ」にも合う。
+
+**git init する件**：そういうもの。`npm create cloudflare` のような、プロジェクトのひな形を作るツール（`create-next-app` など）の多くは、「git を使いますか？」と聞いて、Yes なら `git init` と最初のコミットまでやる。「プロジェクトを作ったら、たいていリポジトリにする」という前提で作られているから。No と答えれば git はやらない。
+
+### Q. `gh repo create` は何をしているのか
+
+手元の既存のリポジトリから、GitHub にリポジトリを作り、`origin` の登録と push まで一度にできる（ブラウザで作る必要がない）。
+
+```bash
+gh repo create sample-cf-workers-d1 --private --source . --push
+```
+
+| オプション | 意味 |
+| --- | --- |
+| `--private` | 非公開のリポジトリにする（`--public` なら公開） |
+| `--source .` | いまのフォルダ（既存の git リポジトリ）を元にする |
+| `--push` | 作ったリポジトリを `origin` として登録し、そのまま push する |
+
+gh は、PR の作成（`gh pr create`）や Issue の操作もコマンドでできる。
+
+### Q. noreply メールアドレスとは何か。公開リポジトリのコミットの作者をどうするか
+
+noreply メールアドレスは、GitHub が各アカウントに1つずつ用意している、コミット専用のダミーのアドレス（`<ID>+<ユーザー名>@users.noreply.github.com`）。
+
+- このアドレスには、メールは届かない。git のコミットに書くためだけのアドレス。
+- GitHub は、このアドレスで作ったコミットをアカウントに結び付ける。コミットの横にアイコンが出て、草（コントリビューション）にも数えられる。中身のアドレスを隠したまま、本人のコミットとして扱われる。
+- git のコミットには作者のメールアドレスが必ず記録され、公開リポジトリでは誰でも `git log` で見られるので、本物のアドレスを隠したいときに使う標準的な方法。
+
+infra（GitHub では `cf-infra-playbook`、公開）は、リポジトリ単位で `git config user.email` に noreply を設定し、公開前の既存のコミットも `git filter-branch --env-filter` で作者を書き換えた。まだどこにも push していなかったので、履歴を書き換えても他に影響はなかった（コミットの ID は変わる）。GitHub の Settings → Emails の「Keep my email addresses private」と「Block command line pushes that expose my email」を有効にすると、うっかり本物のアドレスで push するのを GitHub 側で止められる。
+
+その後、gmail のアドレスは秘匿性の高い情報ではないので、oci-platform 以降の新しいリポジトリはそのままでよいことにした。
+
+### Q. 新しいサービスを始めるときのテンプレートは、サンプルとは別に作るのか
+
+作らない。サンプルが薄いうちは、テンプレートを別に作るとほとんど重複し、2つを同じ状態に保ち続ける手間のほうが大きくなる。
+
+そこで、**サンプルをそのままテンプレートとして使う**。サンプルのリポジトリを GitHub の Template repository に設定すると（リポジトリの Settings で有効にする）、次の1コマンドで、サンプルを丸ごとコピーした新しいリポジトリができる。履歴は引き継がれない。
+
+```bash
+gh repo create <新サービス名> --template alphajinsei/sample-cf-workers-d1 --public --clone
+```
+
+そのうえで、各サンプルの README に「コピーしたあと書き換える場所の一覧」（サービス名、ドメイン、DB の名前、Terraform の state のキーなど）を書いておく。特に Terraform の state のキーは、変え忘れるとサンプルの state を上書きしてしまう。サンプルが育てば、テンプレートも一緒に育つ。
 
 ## Claude Code
 
-- メモリは、開いたプロジェクトのフォルダごとに分かれる（`~/.claude/projects/<パス>/memory/`）。別のフォルダで開き直すと、約束が引き継がれない。プロジェクトのルールは CLAUDE.md に書いておくほうが確実。
-- 作業の拠点の外のフォルダは、`.claude/settings.json` の `permissions.additionalDirectories` に登録すれば、同じセッションから読み書きできる。
-- Claude が使う Bash は非対話シェルなので `~/.bashrc` が読まれず、nvm が効かない。
+### Q. サンプルのフォルダを infra の外に置くと、VSCode で開いている infra とずれてしまう。どうするか
+
+ずれるのは2つ。
+
+- VSCode のエクスプローラー：サンプルのファイルが見えない
+- Claude Code：作業ディレクトリが infra なので、外のフォルダの編集は毎回許可を求められる。さらに、**メモリはプロジェクトのフォルダごとに分かれている**（`~/.claude/projects/<パス>/memory/`）ので、サンプル側で Claude を開き直すと、それまでの約束が読み込まれない
+
+そこで、作業の拠点は infra のままにして、サンプルを「追加のフォルダ」として登録した。
+
+1. VSCode：「ファイル → フォルダーをワークスペースに追加」でサンプルを足す。1つのウィンドウに複数のフォルダが並び、git もそれぞれ別に表示される。
+2. Claude Code：infra の `.claude/settings.json` の `permissions.additionalDirectories` にサンプルのフォルダを登録する。infra のセッションのまま、サンプルのファイルも普通に読み書きできる。サンプルが増えたら、この配列に足していく。
+
+```json
+{
+  "permissions": {
+    "additionalDirectories": ["/home/alphajinsei/claude-sandbox/sample-cf-workers-d1"]
+  }
+}
+```
+
+プロジェクトのルール（「コマンドをロードマップに残す」など）は、メモリではなく CLAUDE.md に書いておくほうが確実。CLAUDE.md はリポジトリにあるので、どのフォルダで開いても、そのリポジトリのルールが読まれる。
+
+### Q. Claude が Node.js のコマンドを実行するとき、なぜ `bash -ic` を使うのか
+
+Claude が使う Bash は nvm を読み込まないので、`npx` が Windows 側に解決されてしまう。作業の途中でこれに気づき、CLAUDE.md に「Claude が Node.js のコマンドを実行するときは `bash -ic` を使う」と書いた（`-i` で対話シェルとして起動すると、nvm の設定が読み込まれる）。ユーザー自身のターミナルには関係ない。
 
 ## Node.js / npm
 
-- `npm create foo` は npm の決まりで `npx create-foo` に読み替えられる。ツールを配る側が `create-` で始まる名前で公開している。`create-cloudflare`（C3）は、ひな形を書き出して `npm install` と `git init` までする使い捨てのツール。→ [番外編：Node.js まわりの用語](extra-nodejs-basics.md)
+### Q. node.js、npm、npx、nvm は、それぞれ何か。fnm や Node 22 とは何か。nvm をよく聞くが、あえて fnm を採用した理由はあるのか
+
+**4つの関係**
+
+| 名前 | 何者か | たとえ |
+| --- | --- | --- |
+| Node.js | JavaScript をパソコンやサーバーの上で動かすプログラム。もともと JavaScript はブラウザの中でしか動かなかった | エンジン |
+| npm | Node.js 用のライブラリを、ネット上の置き場（npm レジストリ）から取ってきて入れる道具。Node.js に付いてくる | 部品の通販アプリ |
+| npx | npm に付いてくる「入っている道具を、その場で実行する」コマンド。`npx wrangler login` は「このプロジェクトに入れた wrangler を動かす」という意味 | 買った工具をすぐ使うボタン |
+| nvm | Node.js 自体のバージョンを入れたり切り替えたりする道具 | エンジンの載せ替え係 |
+
+使う順番でいうと、nvm で Node.js を入れる → npm で wrangler や Hono を入れる → npx で wrangler を実行する。
+
+**fnm と Node 22**
+
+- fnm（Fast Node Manager）：nvm と同じ役割（Node.js のバージョン管理）をする別の道具。Rust で書かれていて速い。
+- Node 22：Node.js のメジャーバージョン。偶数のバージョンが長期サポート版（LTS）で、数年間はバグや脆弱性の修正が続く。2026-11 の時点では 24 が現役の LTS で、22 はメンテナンス期間（2027-04 にサポート終了）。これから始めるなら 24。
+
+**なぜ fnm にしていたか**：決定的な理由はなかった。fnm はターミナルを開くたびに少し時間がかかる nvm の問題がなく、プロジェクトのフォルダに入ると指定のバージョンに自動で切り替えられる。nvm は圧倒的に有名で、Microsoft の WSL 向け公式手順もこちらを使い、検索すると情報が多い。今回の使い方（Node は1バージョンだけ）ではどちらでも差はほぼない。
+
+**nvm にした**：「情報がネットに多いということは、AI で検索した場合にヒットする情報も多いということ」なので、nvm を選んだ。
+
+→ [番外編：Node.js まわりの用語](extra-nodejs-basics.md)
+
+### Q. `npm create cloudflare@latest sample-cf-workers-d1` は何をしているのか。cloudflare というモジュールを npm で取り寄せて、インストールしているのか。このコマンドだけでデプロイまでされたように見えた
+
+`npm create xxx` は「`create-xxx` というパッケージを取ってきて、その場で実行する」という決まった書き方。中身は `npx create-cloudflare@latest sample-cf-workers-d1` と同じ。
+
+1. npm が `create-cloudflare`（通称 C3）というパッケージの最新版（`@latest`）をダウンロードし、一時的な場所で実行する。プロジェクトにはインストールされない。
+2. C3 が質問をして、答えに合ったひな形のファイルを `sample-cf-workers-d1/` に書き出す。
+3. C3 がそのフォルダで `npm install` を実行し、wrangler などの依存パッケージを `node_modules/` に入れる。
+4. 「git を使う」と答えたので、`git init` して最初のコミットまでする。
+
+C3 は**ひな形を作るためだけの使い捨てのツール**。できあがったプロジェクトの中で働くのは、3 で入った wrangler。
+
+**デプロイはされていなかった**：Cloudflare 側に問い合わせると「This Worker does not exist on your account」と返った。最後に URL や「SUCCESS」のような表示が出たので、デプロイされたように見えただけ。デプロイは、このあとの `npx wrangler deploy` で初めて行う。
+
+### Q. `npm create` という npm のオプションがあるように読めたが、実際には `npx create-cloudflare` なのか。npm が Cloudflare の記法に合わせている、というのがよく分からない
+
+逆。**npm がルールを決めていて、Cloudflare がそのルールに合わせている。**
+
+`npm create` は npm に最初からあるサブコマンドで、`npm init` の別名。npm は、こういう読み替えのルールを決めている。
+
+| 打つコマンド | npm が実際に実行するもの |
+| --- | --- |
+| `npm create foo` | `npx create-foo` |
+| `npm create @foo` | `npx @foo/create` |
+
+npm 自身は Cloudflare のことも Vite のことも知らない。「`create-` を前に付けた名前のパッケージを探して実行する」だけ。ひな形のツールを配る側が、このルールに合わせてパッケージ名を `create-` で始めて公開している（`create-cloudflare`、`create-vite`、`create-next-app`）。
+
+引数なしの `npm init` は、`package.json` を1つ作るだけ。こちらがちょうど `git init` に相当する。`npm init <名前>` にすると、ひな形のツールを呼び出す高機能版になる。
+
+**理解の確認**：「npm の記載の規則に、各モジュールの作成者が従っている」で合っている。「git init の数段レベルが高い版」という理解も合っている。（「その場で実行する」という意図が見える `npx create-xxx` の方が分かりやすい、という感想だった。）
 
 ## TypeScript
 
-- TypeScript は JavaScript に型の注釈を足したもの。型は実行前に取り除かれる。
-- `export default` で、そのファイルの代表として外に渡すものを決める。Workers は、渡されたオブジェクトの `fetch` を、リクエストのたびに呼ぶ。
-- `async` の関数は Promise（あとで結果が届く引換券）を返す。`await` で結果を待つ。
-- `satisfies X` は「X の形に合っているか確かめて」という指示。合わないとエディタで赤線が出て、引数の型も X から自動で決まる。
-- `(c) => ...` はアロー関数（関数の短い書き方）。`const` は再代入できず、`let` はできる。`type Memo = { ... }` で形を定義し、`Memo[]` は Memo の配列。
+### Q. TypeScript に全く触ったことがない。`src/index.ts` の中身を解説してほしい
+
+TypeScript は、**JavaScript に「型」の注釈を足した言語**。型は書き間違いをエディタで見つけるためだけのもので、実行前に取り除かれて普通の JavaScript になる。
+
+```ts
+export default {
+	async fetch(request, env, ctx): Promise<Response> {
+		return new Response("Hello World!");
+	},
+} satisfies ExportedHandler<Env>;
+```
+
+- **`export default { ... }`**：このファイルの「代表として外に渡すもの」を決める。ここでは `{ }` で囲んだオブジェクト（いくつかの関数をまとめた入れ物）を渡している。Cloudflare の実行環境はこのファイルを読み込み、渡されたオブジェクトの中から決まった名前の関数を探して呼び出す。
+- **`fetch(request, env, ctx)`**：その「決まった名前」の1つ。**HTTP リクエストが届くたびに、実行環境がこの関数を呼び出す。**ほかに `scheduled`（定期実行のときに呼ばれる）などがある。
+
+  | 引数 | 中身 |
+  | --- | --- |
+  | `request` | 届いたリクエスト（URL、メソッド、ヘッダー、本文） |
+  | `env` | `wrangler.jsonc` で設定した接続先や変数。D1 は `env.DB` として使う |
+  | `ctx` | 応答を返したあとも処理を続けたいとき（ログの送信など）に使う道具 |
+
+- **`async` と `Promise<Response>`**：`async` は「この関数は時間のかかる処理（DB への問い合わせなど）を待つことがある」という印。async の関数は、結果を **Promise**（「あとで結果が届く」という引換券）に包んで返す。`: Promise<Response>` は「最終的に Response が届く」という戻り値の型。
+- **`return new Response("Hello World!")`**：「Hello World!」という本文の HTTP レスポンスを作って返す。ステータスは、指定しなければ 200。`Request` や `Response` は、ブラウザの JavaScript でも使われている Web 標準の部品。
+- **`satisfies ExportedHandler<Env>`**：「このオブジェクトが、Cloudflare の決めた形（`ExportedHandler`）に合っているか確かめて」という指示。`fetch` の名前を書き間違えたり、Response 以外を返したりすると、エディタで赤線が出る。`request`、`env`、`ctx` に型を書いていないのに型が付くのも、このおかげ。`Env` は `worker-configuration.d.ts` に、`wrangler.jsonc` から自動生成されている。
+
+この Worker には「サーバーを起動して待ち受ける」という処理がどこにもない（Workers の節の問いにつながる）。
+
+### Q. Hono のコード（`app.get("/api/health", (c) => c.json({ ok: true }))`）は、それぞれ何を意味しているのか
+
+```ts
+import { Hono } from "hono";
+const app = new Hono<{ Bindings: Env }>();
+app.get("/api/health", (c) => c.json({ ok: true }));
+export default app;
+```
+
+| コード | 意味 |
+| --- | --- |
+| `import { Hono } from "hono"` | 入れた hono パッケージから、`Hono` という部品を取り込む |
+| `new Hono<{ Bindings: Env }>()` | アプリ本体を作る。`<{ Bindings: Env }>` は TypeScript の型の指定で、「`env` の中身は `Env` 型」と教えている。`c.env.DB` を書いたとき、エディタが補完してくれる |
+| `app.get("/api/health", ...)` | 「GET で `/api/health` に来たら、この関数を実行する」という登録 |
+| `(c) => c.json({ ok: true })` | `=>` は関数の短い書き方（アロー関数）。`c`（context）には、リクエストや `env` がまとめて入っている。`c.json(...)` で JSON の応答を返す |
+| `export default app` | Hono のアプリ自体が `fetch` 関数を持っているので、そのまま渡せる。`export default { fetch(...) }` と同じ役割 |
+
+### Q. メモの API（メモリ上の配列）のコードで、新しく出てくる書き方は何か
+
+```ts
+type Memo = { id: number; text: string; createdAt: string };
+
+const memos: Memo[] = [];
+let nextId = 1;
+
+app.get("/api/memos", (c) => c.json(memos));
+
+app.post("/api/memos", async (c) => {
+  const { text } = await c.req.json<{ text: string }>();
+  const memo: Memo = { id: nextId++, text, createdAt: new Date().toISOString() };
+  memos.push(memo);
+  return c.json(memo, 201);
+});
+
+app.delete("/api/memos/:id", (c) => {
+  const id = Number(c.req.param("id"));
+  const index = memos.findIndex((m) => m.id === id);
+  if (index === -1) return c.json({ error: "not found" }, 404);
+  memos.splice(index, 1);
+  return c.body(null, 204);
+});
+```
+
+| コード | 意味 |
+| --- | --- |
+| `type Memo = { ... }` | 「メモ」の形を TypeScript の型として定義する（id は数値、text は文字列…） |
+| `const memos: Memo[] = []` | メモを入れる空の配列。`Memo[]` は「Memo の配列」という型 |
+| `let nextId = 1` | 次に振る ID。`const` は再代入できない、`let` はできる |
+| `async (c) => { ... await ... }` | `await` は「Promise の結果が届くまで待つ」。リクエストの本文を読むのは時間がかかる処理なので待つ |
+| `c.req.json()` | リクエストの本文を JSON として読む |
+| `c.json(memo, 201)` | JSON を返す。201 は「作成した」というステータス |
+| `"/api/memos/:id"` と `c.req.param("id")` | URL の `:id` の部分を変数として受け取る。`/api/memos/3` なら `"3"` |
+| `c.body(null, 204)` | 本文なしで返す。204 は「成功、返す中身はない」 |
 
 ## Cloudflare Workers
 
