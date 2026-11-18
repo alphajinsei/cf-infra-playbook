@@ -2,7 +2,7 @@
 
 最終更新：2026-11-07
 
-[方式検討：OCI のメール基盤](../design/oci-mail.md) の構成図（[oci-mail.drawio.svg](../design/diagrams/oci-mail.drawio.svg)）を描き直す中で、Postfix の中身と、メールのプロトコル・ポート・認証を整理し直した記録。図には最終的に Postfix を1つの箱として描いたが、そこに至るまでに分かったことを残す。基礎は [番外編：メールの仕組み](extra-mail-basics.md)、組み立ての記録は [番外編：メールサーバーを組む](extra-mail-build.md)。
+[方式検討：OCI のメール基盤](../design/oci-mail.md) の構成図（[oci-mail.drawio.svg](../design/diagrams/oci-mail.drawio.svg)）を描き直す中で、Postfix の中身と、メールのプロトコル・ポート・認証を整理し直した記録。図には最終的に Postfix を1つの箱として描いたが、そこに至るまでに分かったことを残す。基礎は [番外編：メールの仕組み](extra-mail-basics.md)、組み立ての記録は [Step 8 の記録：メールサーバーを組む](../roadmaps/oci-mail.md)。
 
 ## 1. Postfix はルーターに近い
 

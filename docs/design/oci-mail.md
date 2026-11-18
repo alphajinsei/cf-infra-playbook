@@ -2,7 +2,7 @@
 
 最終更新：2026-11-06
 
-[方式検討：OCI](oci.md) の別冊。共通基盤の mail VM に、`alphajinsei.com` のメールの送受信の基盤を作る。仕組みの基礎は [番外編：メールの仕組み](../notes/extra-mail-basics.md)、組みながら分かったことは [番外編：メールサーバーを組む](../notes/extra-mail-build.md)、手順は [学習ロードマップ：OCI](../roadmaps/oci.md) の Step 8。
+[方式検討：OCI](oci.md) の別冊。共通基盤の mail VM に、`alphajinsei.com` のメールの送受信の基盤を作る。仕組みの基礎は [番外編：メールの仕組み](../notes/extra-mail-basics.md)、組みながら分かったことは [Step 8 の記録：メールサーバーを組む](../roadmaps/oci-mail.md)、手順は [学習ロードマップ：OCI](../roadmaps/oci.md) の Step 8。
 
 ## 1. ゴール
 

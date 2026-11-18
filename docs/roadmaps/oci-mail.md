@@ -1,8 +1,8 @@
-# 番外編：メールサーバーを組む
+# Step 8 の記録：メールサーバーを組む
 
-最終更新：2026-11-05
+最終更新：2026-11-19
 
-[学習ロードマップ：OCI](../roadmaps/oci.md) の Step 8 で、mail VM にメールサーバーを組みながら分かったことの記録。回（8-2、8-3 …）ごとに追記していく。仕組みの基礎は [番外編：メールの仕組み](extra-mail-basics.md)、決めたことは [方式検討：OCI のメール基盤](../design/oci-mail.md)。
+[学習ロードマップ：OCI](oci.md) の Step 8 で、mail VM にメールサーバーを組みながら分かったことの記録。回（8-2、8-3 …）ごとに追記していく。仕組みの基礎は [番外編：メールの仕組み](../notes/extra-mail-basics.md)、決めたことは [方式検討：OCI のメール基盤](../design/oci-mail.md)。
 
 ## 8-2. 受信：Postfix
 
@@ -19,7 +19,7 @@ Internet --25--> smtpd --> cleanup --> queue (qmgr) --+--> virtual : write Maild
                                                       +--> smtp    : other domains (8-4: via Email Delivery)
 ```
 
-Postfix を構成するデーモンと、送信も受信も宛先で振り分けるルーターのような考え方は、構成図を描くときに整理した → [番外編：メールの流れを図にして分かったこと](extra-mail-diagram.md)
+Postfix を構成するデーモンと、送信も受信も宛先で振り分けるルーターのような考え方は、構成図を描くときに整理した → [番外編：メールの流れを図にして分かったこと](../notes/extra-mail-diagram.md)
 
 ### アドレスクラス
 

@@ -2124,7 +2124,7 @@ ssh oci-mail "sudo sh -c 'iptables-restore < /etc/iptables/rules.v4' && sudo ipt
 メールの話は大きいので、ユーザーの希望で番外編に分けて、そのつど詳しく書いている。
 
 - メールの基礎（登場人物、封筒と便箋、ポート、SPF・DKIM・DMARC の全体像とアライメント）→ [番外編：メールの仕組み](extra-mail-basics.md)
-- メールサーバーを組みながら分かったこと（Postfix の役割と設定、届いたメールのヘッダー、証明書の役割、ACME と自動更新、Dovecot との分担）→ [番外編：メールサーバーを組む](extra-mail-build.md)
+- メールサーバーを組みながら分かったこと（Postfix の役割と設定、届いたメールのヘッダー、証明書の役割、ACME と自動更新、Dovecot との分担）→ [Step 8 の記録：メールサーバーを組む](../roadmaps/oci-mail.md)
 - メールの流れを図にして分かったこと（Postfix はルーターに近い、ポートと暗号化は別の軸、認証の3種類、経路ごとのプロトコル・ポート・認証）→ [番外編：メールの流れを図にして分かったこと](extra-mail-diagram.md)
 
 ## 認証・認可

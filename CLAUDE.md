@@ -22,7 +22,7 @@
 │   │   ├── platforms/        基盤ごとの資料（cloudflare。OCI は oci-platform の README）
 │   │   ├── design/           方式の検討（overview / cloudflare / oci / oci-mail）
 │   │   │   └── diagrams/     構成図（.drawio.svg。md から画像として参照）
-│   │   ├── roadmaps/         学習ロードマップ（cloudflare / oci）
+│   │   ├── roadmaps/         学習ロードマップ（cloudflare / oci。Step の中身もここに書く。長い Step の記録は別ファイル：oci-mail）
 │   │   └── notes/            勉強メモと番外編（extra-*.md）
 │   └── .secrets/           API トークンなどの置き場。git 管理外（.gitignore）
 └── sample-<基盤>-<構成>/   方式ごとのサンプルアプリ。それぞれ独立した git リポジトリ

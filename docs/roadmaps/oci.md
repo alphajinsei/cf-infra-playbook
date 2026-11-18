@@ -447,7 +447,7 @@ VM の停止のアラームは、VM を止めて確かめることもできる�
 
 ## Step 8：メールサーバー
 
-`alphajinsei@alphajinsei.com` で送受信できるようにし、アプリからも送れるようにする。方式は部品を自分で組む形（Postfix・Dovecot・Rspamd、送信は Email Delivery に中継）。決めたことは [方式検討：OCI のメール基盤](../design/oci-mail.md)、基礎は [番外編：メールの仕組み](../notes/extra-mail-basics.md)、組みながら分かったことは [番外編：メールサーバーを組む](../notes/extra-mail-build.md)。大きいので6つに分け、各回のコマンドはその回に入るときに書き足す。
+`alphajinsei@alphajinsei.com` で送受信できるようにし、アプリからも送れるようにする。方式は部品を自分で組む形（Postfix・Dovecot・Rspamd、送信は Email Delivery に中継）。決めたことは [方式検討：OCI のメール基盤](../design/oci-mail.md)、基礎は [番外編：メールの仕組み](../notes/extra-mail-basics.md)、組みながら分かったことは [Step 8 の記録：メールサーバーを組む](oci-mail.md)。大きいので6つに分け、各回のコマンドはその回に入るときに書き足す。
 
 ### 8-1. 基礎
 
