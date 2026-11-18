@@ -94,7 +94,7 @@ OCI だけ基盤の資料が別のリポジトリにあるのは、OCI には共
 ### アプリの作り
 
 - **ステートレスに作る。**消えたら困るデータを、メモリやコンテナの中のファイルに置かない。状態は基盤の DB やストレージに置く。
-- ログインが要るページは、アプリで作らず基盤の仕組みを使う（Cloudflare は Access。③は未整備）。
+- ログインが要るページは、アプリで作らず基盤の仕組みを使う（Cloudflare は Access。③は [auth](https://github.com/alphajinsei/auth) でログインさせ、ひな形は [sample-auth-client](https://github.com/alphajinsei/sample-auth-client)）。
 
 ### 秘密情報と公開リポジトリ
 

@@ -30,10 +30,11 @@
         sample-cf-workers-static（方式①：Astro の静的サイト）
 └── oci-platform/           方式③の共通基盤（Terraform + Ansible）。サンプルは sample-oci-vm-docker
 └── auth/                   認証基盤（方式③のアプリ。設計・ロードマップ・勉強メモも中にある）
+└── sample-auth-client/     auth でログインする側のひな形（方式③に載る。名前は例外で、基盤ではなく役割を表す）
 ```
 
 - infra は GitHub では `alphajinsei/cf-infra-playbook`（公開）。手元のフォルダ名は infra のまま。公開リポジトリなので、秘密情報や個人のメールアドレスを書かない。コミットの作者は noreply アドレス（リポジトリ単位で `git config user.email` に設定済み）。
-- サンプルは、フォルダ名＝GitHub のリポジトリ名＝Worker の名前。小文字とハイフンのみ。
+- サンプルは、フォルダ名＝GitHub のリポジトリ名＝Worker の名前。小文字とハイフンのみ。方式のサンプルは `sample-<基盤>-<構成>`、方式をまたぐ役割のひな形は `sample-<役割>`（例：`sample-auth-client`）。
 - 作業の拠点は infra。サンプルのフォルダは `.claude/settings.json` の `additionalDirectories` に登録して、このセッションから読み書きする。サンプルを増やしたらここにも追記する。
 - 開発環境は WSL2（Ubuntu）。Node.js は nvm で入れた LTS（24）。
 
