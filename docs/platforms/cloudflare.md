@@ -116,7 +116,7 @@ Cloudflare の共通基盤はアカウントそのもの（DNS ゾーン、R2 �
 | Cloudflare アカウント | Workers / D1 / R2 / Access を持つ |
 | DNS ゾーン | `alphajinsei.com`（ドメインはお名前.com、DNS は Cloudflare）。OCI の方式③やメールのレコードも同じゾーンにある |
 | R2 バケット `tfstate` | Cloudflare の方式のサービスの Terraform の state（キーは `<サービス名>/terraform.tfstate`）。OCI の state は OCI の Object Storage |
-| Access のチーム | `alphajinsei.cloudflareaccess.com`（ログインはメールのワンタイムコード） |
+| Access のチーム | `alphajinsei.cloudflareaccess.com`（ログインの選択肢は、メールのワンタイムコードと auth.alphajinsei.com（自作の IdP。OIDC）。auth の選択肢の設定は auth のリポジトリの `infra/terraform/access-idp.tf`） |
 
 ### 認証情報
 
