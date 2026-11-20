@@ -125,7 +125,7 @@ Cloudflare の共通基盤はアカウントそのもの（DNS ゾーン、R2 �
 | `wrangler login`（OAuth） | 手元の wrangler | `~/.config/.wrangler/` |
 | `gh auth login` | 手元の gh | `~/.config/gh/` |
 | R2 の S3 互換の鍵 | Terraform の backend | `infra/.secrets/r2-tfstate.env` |
-| Terraform 用 API トークン（Access の編集） | Terraform の provider | `infra/.secrets/terraform-cloudflare.env` |
+| Terraform 用 API トークン（Access の編集。権限：Account / Access: Apps and Policies / Edit、Account / Access: Organizations, Identity Providers, and Groups / Edit。後者は 2026-11-20 に、Access のログインの選択肢に auth を足すために加えた） | Terraform の provider（各アプリの Access のアプリとポリシー、auth の `infra/terraform/access-idp.tf` の IdP） | `infra/.secrets/terraform-cloudflare.env` |
 | デプロイ用 API トークン | GitHub Actions を使うとき（今は使っていない） | `infra/.secrets/cloudflare.env`、d1 のリポジトリの Secrets |
 
 ## 7. ⓪（Pages + GitHub 連携）について
