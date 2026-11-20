@@ -48,7 +48,7 @@ OCI だけ基盤の資料が別のリポジトリにあるのは、OCI には共
 
 | 方式 | サンプル（手元 = GitHub のリポジトリ名） | 構成 | 基盤の資料 | README |
 | --- | --- | --- | --- | --- |
-| ⓪ 既存・Pages（新規には使わない） | なし（既存の例：`dia-logos`） | Cloudflare Pages + GitHub 連携。main に push すると Cloudflare がビルド・デプロイする | [Cloudflare](platforms/cloudflare.md)（7章） | なし |
+| ⓪ 既存・Pages（新規には使わない） | なし（使っているのは `dia-logos` と `blog` だけ） | Cloudflare Pages + GitHub 連携。main に push すると Cloudflare がビルド・デプロイする | [Cloudflare](platforms/cloudflare.md)（7章） | なし |
 | ① 標準・静的 | `sample-cf-workers-static` | Astro（SSG）+ Workers Static Assets | [Cloudflare](platforms/cloudflare.md) | [README](https://github.com/alphajinsei/sample-cf-workers-static#readme) |
 | ② 標準・アプリ + DB | `sample-cf-workers-d1` | Workers + Hono + D1 + Drizzle、Access は Terraform | [Cloudflare](platforms/cloudflare.md) | [README](https://github.com/alphajinsei/sample-cf-workers-d1#readme) |
 | ③ 汎用VM | `sample-oci-vm-docker` | OCI Always Free：Cloudflare → Flexible LB → Docker ホスト（A1）→ MySQL HeatWave。メールは mail VM から送る | [oci-platform](https://github.com/alphajinsei/oci-platform#readme) | [README](https://github.com/alphajinsei/sample-oci-vm-docker#readme) |
