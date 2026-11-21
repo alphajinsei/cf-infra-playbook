@@ -1,6 +1,6 @@
 # 勉強メモ
 
-最終更新：2026-11-19
+最終更新：2026-11-22
 
 [学習ロードマップ](../roadmaps/) を進める中で出てきた疑問と、その答えを積み上げていくメモ。1つの問いに1つの見出しを立てる。答えは、会話の中で説明した内容を、圧縮せずにそのまま残す（あとから読み返して「当時何を理解したのか」が分かるように）。とくに長い話は番外編（`extra-*.md`）に分けて、答えからリンクする。認証基盤の話は、auth リポジトリの [勉強メモ](https://github.com/alphajinsei/auth/blob/main/docs/notes/study-notes.md)。
 
@@ -757,6 +757,119 @@ frontmatter の `date: 2026-11-03` を、YAML が日付型として読むため�
 ### Q. `npm install` で、インストールスクリプトを止めた旨の警告が出た。問題はないのか
 
 新しい npm は、依存パッケージのインストールスクリプト（esbuild、workerd の postinstall）を既定で止める。止めたものは `npm install-scripts ls` で確認できる。止められていても、ビルド・ローカル実行（wrangler dev）・デプロイはどれも問題なく動いた。
+
+## GitHub Pages と GitHub Actions
+
+satsuki（CRC 相談役アプリ）の紹介ページ（HTML 1枚と画像・会話データ）を公開するときに出てきた疑問。方針は「手間をかけない」「既存のリポジトリとは別にリポジトリを作らない」「デモページのためだけに Web サーバーを構築しない」で、既存のリポジトリに push して公開するだけの GitHub Pages を選んだ。公開先は `https://alphajinsei.github.io/crc-copilot/`（main の `/docs` を公開）。
+
+### Q. Pages はリポジトリごとに特定の一つのブランチを公開できる、ということか。ページだけを入れた gh-pages ブランチを作る、というのは、ブランチを切ったあと既存の内容をすべて git rm して、今回の HTML だけを登録するイメージか
+
+**その理解で合っている。Pages のサイトはリポジトリにつき1つで、そのうえで「どのブランチの、どのフォルダを公開するか」を選ぶ。**どのブランチか指定しないと、公開する内容が一意に定まらないので（ユーザーの言い直し）。
+
+gh-pages ブランチについては、普通のブランチは元のブランチの中身を引き継ぐ、という理解も合っている。ただ、`git switch --orphan gh-pages` のように、**履歴も中身も空のブランチ**を作ることもできる。「ページだけのブランチ」はこちらのことで、git rm で消していく必要はない。
+
+ただし今回は、ブランチを分けない方式（main の `/docs` を公開）にした。理由は次のとおり。
+
+- main にも HTML を入れておきたい。ブランチを分けると、同じ HTML を2つのブランチで持つことになり、直すたびに両方へ反映する手間が出る。
+- `docs/` にあるほかのファイル（design.md など）が公開されても困らない。リポジトリ自体がもともと公開されているので、新しく外に出る情報はない。
+
+### Q. 専用のディレクトリを切ってそこに HTML を置けば、HTML だけを公開できるのか。それとも、GitHub が提示している選択肢は `/` か `/docs` の2択しかない（後者にしたければネーミングを GitHub の仕様に合わせる必要がある）ということか
+
+**後者。ブランチから直接公開する方式（Deploy from a branch）では、フォルダは `/`（ブランチ全体）か `/docs` の2択しかない。**好きな名前のフォルダは指定できないので、`/docs` を使うならフォルダ名を GitHub の仕様に合わせることになる（コンソールでも `/` と `/docs` しか表示されなかった）。
+
+satsuki では `docs/` にすでに design.md と testcases.md があるので、`/docs` を公開するとこの2つも一緒に公開される。HTML だけを公開したいなら、次の2つのやり方がある。
+
+| やり方 | 公開されるもの | 手間 |
+|---|---|---|
+| **① `docs/` に一緒に置く**（採用） | ページに加えて、design.md と testcases.md | 一番少ない。コンソールで「main / `/docs`」を選ぶだけ |
+| **② GitHub Actions で公開する** | 指定したフォルダだけ（例：`showcase/`） | 20行ほどの設定ファイル（`.github/workflows/` の下の yml）を1つ足す。コンソールでは Source を「GitHub Actions」にする |
+
+`docs/` の中身を別の場所に移して空ける方法もあるが、CLAUDE.md などからの参照を書き換えることになるので採らなかった。
+
+**① の手順（実施した）**
+
+1. リポジトリの **Settings** → 左のメニューの **Pages**
+2. 「Build and deployment」の **Source** を **Deploy from a branch** にする
+3. **Branch** で `main`、その右のフォルダで `/docs` を選んで **Save**
+4. 1〜2分待つ。**Actions** タブに「pages build and deployment」が流れ、終わると Pages の画面上部に「Your site is live at …」と URL が出る
+
+① では GitHub が裏で Jekyll（静的サイトの変換ツール）を自動で動かす。`index.html` はそのまま公開され、design.md などの Markdown は HTML に変換されて `…/design.html` のような URL でも読めるようになる。
+
+**② の手順（勉強用。設定はしていない）**
+
+1. Settings → Pages の **Source** を **GitHub Actions** にする。コンソールには見本として「GitHub Pages Jekyll」と「Static HTML」が出る
+2. `.github/workflows/` の下に yml を置いて push する。GitHub の見本は `static.yml` や `jekyll-gh-pages.yml` という名前だが、`.github/workflows/` の下にあれば名前は何でもよい
+
+```yaml
+name: Pages
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: showcase   # このフォルダだけを公開する。名前は自由
+      - id: deployment
+        uses: actions/deploy-pages@v4
+```
+
+main に push するたびにこの処理が動き、`path` に書いたフォルダの中身だけが公開される。
+
+① と ② の違いは、① が「GitHub が決めたフォルダを、GitHub が決めたやり方で公開する」、② が「何をどう公開するかを自分で書く」こと。その分 ② はフォルダ名が自由で、HTML だけを公開することもできる。① でも Actions タブに処理が出るのは、① も裏では同じ仕組みで動いているから。
+
+### Q. ① の場合、画像もちゃんと表示されるか。画像も表示させたければ、画像自体も docs 配下に置いておく必要があるか
+
+**必要がある。公開されるのは `docs/` の中だけなので、その外にあるファイルはブラウザから取りに行けない。**satsuki では、ページを `docs/index.html`、画像と会話データを `docs/showcase/` に置き、ページの中から `showcase/a1-fact.png` のような相対パスで参照した。push の前に `docs/` を手元の簡易サーバーで開き、画像12枚がすべて読み込めることを確かめた。
+
+補足：Claude の Artifact から持ってきたページは、`<!doctype html>`・`<meta charset="utf-8">`・viewport の指定などの骨組みを Artifact 側が公開時に自動で足していた。単独の HTML として置くときは、これを自分で足す必要がある（足さないと、サーバーが文字コードを送らない環境で日本語が文字化けする。手元の `python3 -m http.server` で実際に文字化けした）。
+
+### Q. Pages の設定画面に Custom domain という欄がある。alphajinsei.com のドメインでホストすることも可能ということか。alphajinsei.com 側の設定であるべきな気もするが、そんなことが GitHub 側で設定可能なのか。GitHub が DNS を持っていて CNAME を入れてくれるということか
+
+**可能。ただし GitHub が DNS を持っていてレコードを入れてくれるわけではない。DNS の設定は Cloudflare 側で自分で行い、GitHub 側には「このドメインで来たら、このサイトを返す」と登録するだけ。**
+
+1. **Cloudflare の DNS**：`crc-copilot.alphajinsei.com` → `alphajinsei.github.io` の CNAME を足す。Cloudflare のプロキシ（オレンジの雲）は**オフ（DNS only）**が無難。GitHub が HTTPS の証明書を自動で取るとき、プロキシを通っていると失敗しやすい。
+2. **GitHub の Custom domain 欄**：`crc-copilot.alphajinsei.com` を入れて Save。① の方式だと、GitHub が `docs/CNAME` というファイルをリポジトリに自動でコミットする。証明書が発行されたら「Enforce HTTPS」にチェックを入れる。
+
+あわせて、GitHub のアカウント設定（Settings → Pages）で `alphajinsei.com` の**所有を確認（verify）**しておくとよい。しておかないと、DNS が GitHub を向いたまま自分の Pages を外したときに、他人がそのサブドメインを自分のサイトに使えてしまう恐れがある（サブドメインの乗っ取り）。
+
+**理解の確認**：「アクセスするだけなら alphajinsei.com の DNS で事足りるが、ドメインが変わるので、証明書とかの話で GitHub 側も転送されてくることを知っておく必要がある」という理解は半分合っている。GitHub 側に登録が要る理由は2つある。
+
+1. **振り分け**：GitHub Pages は、たくさんの人のサイトを**同じ入口（同じ IP アドレス）**で配っている。DNS の CNAME はブラウザをその入口まで案内するだけで、どのサイトを見たいかまでは伝えない。届いたリクエストには「`crc-copilot.alphajinsei.com` を見たい」という宛名（Host ヘッダー）が付いていて、GitHub はこれを見てどのリポジトリのサイトを返すか決める。登録がないと「そんなサイトはない」と 404 を返す。
+2. **証明書**：そのドメイン名の HTTPS の証明書を、GitHub が取得する。
+
+1つの入口でホスト名を見て振り分けるのは、OCI LB のホスト名ベースのルーティングや、Traefik と同じ考え方。
+
+### Q. GitHub Actions は意外と柔軟な設定が可能か。単純な HTML ファイルではなく、動作環境（Node.js 上で動作させるとか）もやろうと思えばできるのか。自作システムの公開の手段の一つとして知っておきたい
+
+**Actions と Pages は別のもの。Actions はその場でビルドなどを実行できるが、Pages で公開できるのは静的ファイルに限る。**
+
+- **Actions**：push などをきっかけに、GitHub が用意した使い捨てのマシンで、書いた手順を実行する仕組み。Node.js も Python も Docker も使えるので、`npm ci && npm run build` のようなビルドは何でもできる。ただし処理が終わればマシンは消えるので、**サーバーを動かし続ける場所ではない**（1つの処理は最長6時間）。
+- **Pages**：**静的なファイル（HTML・画像・JS）を配るだけ**の置き場。サーバー側でプログラムを動かすことはできない。
+
+組み合わせると、こうなる。
+
+| | 例 |
+|---|---|
+| **できる**：Node.js で**ビルドして、出来上がった静的ファイルを Pages に置く** | Astro・Vite・Next.js の静的書き出し。ブラウザの中だけで動くアプリ（Connect 3 のように推論をブラウザで行うものも含む） |
+| **できない**：**Node.js のサーバーを Pages の上で動かす** | satsuki の相談アプリは、サーバー側で API キーを使って Claude を呼んでいるので載せられない。キーをブラウザ側に置くと、誰でも盗めてしまう |
+
+**Actions は Pages 専用ではない。**同じ仕組みで、Cloudflare Workers へのデプロイ（`wrangler deploy`）や、OCI の Docker ホストへのデプロイ（イメージを作って送る）も自動化できる。Actions は「デプロイを自動で行う手段」で、動かす場所は別に選ぶ。
+
+自作システムの公開方式に当てはめると、Pages は「方式①（静的）を、さらに手軽にしたもの」。サーバー処理が要るものは、これまでどおり方式②③になる。
+
+**理解の確認**：「Action でも、あくまでその場でビルドができるだけで、公開できるものは静的ファイルに限る」で合っている（公開先が Pages の場合。Actions から Workers や OCI に送れば、サーバー処理のあるものも公開できる）。
 
 ## ステートレス
 
